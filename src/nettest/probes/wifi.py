@@ -75,6 +75,26 @@ def parse_iw_output(out: str) -> dict[str, Any]:
     return info
 
 
+def _iw_dev_interfaces(out: str) -> list[str]:
+    """Extract wireless interface names from `iw dev` output."""
+    return re.findall(r"^\s*Interface\s+(\S+)\s*$", out, re.MULTILINE)
+
+
+async def _run_cmd(cmd: list[str]) -> tuple[int, str]:
+    """Run a command and return (returncode, stdout). returncode=-1 on FileNotFoundError."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+    except FileNotFoundError:
+        return -1, ""
+    rc = proc.returncode if proc.returncode is not None else -1
+    return rc, stdout.decode("utf-8", errors="replace")
+
+
 class WifiProbe(Probe):
     name = "wifi"
 
@@ -98,41 +118,80 @@ class WifiProbe(Probe):
                 "Versions/Current/Resources/airport",
                 "-I",
             ]
-            parser = parse_airport_output
+            rc, stdout = await _run_cmd(cmd)
+            if rc == -1:
+                return Result(
+                    ts=ts, host=self.ctx.hostname, probe=self.name,
+                    target=target.label(), ok=False,
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    error="tool not found: airport",
+                )
+            if rc != 0:
+                return Result(
+                    ts=ts, host=self.ctx.hostname, probe=self.name,
+                    target=target.label(), ok=False,
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    error=f"exit {rc}",
+                )
+            info = parse_airport_output(stdout)
         elif sysname == "Windows":
-            cmd = ["netsh", "wlan", "show", "interfaces"]
-            parser = parse_netsh_output
+            rc, stdout = await _run_cmd(["netsh", "wlan", "show", "interfaces"])
+            if rc == -1:
+                return Result(
+                    ts=ts, host=self.ctx.hostname, probe=self.name,
+                    target=target.label(), ok=False,
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    error="tool not found: netsh",
+                )
+            if rc != 0:
+                return Result(
+                    ts=ts, host=self.ctx.hostname, probe=self.name,
+                    target=target.label(), ok=False,
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    error=f"exit {rc}",
+                )
+            info = parse_netsh_output(stdout)
         elif sysname == "Linux":
-            cmd = ["iw", "dev", "wlan0", "link"]
-            parser = parse_iw_output
+            dev_rc, dev_out = await _run_cmd(["iw", "dev"])
+            if dev_rc == -1:
+                return Result(
+                    ts=ts, host=self.ctx.hostname, probe=self.name,
+                    target=target.label(), ok=False,
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    error="tool not found: iw",
+                )
+            if dev_rc != 0:
+                return Result(
+                    ts=ts, host=self.ctx.hostname, probe=self.name,
+                    target=target.label(), ok=False,
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    error=f"iw dev exit {dev_rc}",
+                )
+            ifaces = _iw_dev_interfaces(dev_out)
+            if not ifaces:
+                return Result(
+                    ts=ts, host=self.ctx.hostname, probe=self.name,
+                    target=target.label(), ok=False,
+                    duration_ms=(time.perf_counter() - t0) * 1000,
+                    error="no wireless interface",
+                )
+            info = {}
+            for iface in ifaces:
+                rc, stdout = await _run_cmd(["iw", "dev", iface, "link"])
+                if rc != 0:
+                    continue
+                parsed = parse_iw_output(stdout)
+                if parsed.get("ssid") and parsed.get("rssi_dbm") is not None:
+                    info = parsed
+                    break
+                # Merge partial info, keeping last as a fallback
+                info = parsed or info
         else:
             return Result(
                 ts=ts, host=self.ctx.hostname, probe=self.name,
                 target=target.label(), ok=False, duration_ms=0,
                 error=f"unsupported platform {sysname}",
             )
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await proc.communicate()
-        except FileNotFoundError as e:
-            return Result(
-                ts=ts, host=self.ctx.hostname, probe=self.name,
-                target=target.label(), ok=False,
-                duration_ms=(time.perf_counter() - t0) * 1000,
-                error=f"tool not found: {e}",
-            )
-        if proc.returncode != 0:
-            return Result(
-                ts=ts, host=self.ctx.hostname, probe=self.name,
-                target=target.label(), ok=False,
-                duration_ms=(time.perf_counter() - t0) * 1000,
-                error=f"exit {proc.returncode}",
-            )
-        info = parser(stdout.decode("utf-8", errors="replace"))
         ok = "ssid" in info and info.get("rssi_dbm") is not None
         return Result(
             ts=ts, host=self.ctx.hostname, probe=self.name,

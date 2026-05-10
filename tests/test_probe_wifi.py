@@ -65,6 +65,19 @@ Connected to aa:bb:cc:dd:ee:ff (on wlan0)
     assert info["bssid"] == "aa:bb:cc:dd:ee:ff"
 
 
+def test_parse_iw_dev_lists_interfaces():
+    out = """\
+phy#0
+\tInterface wlp3s0
+\t\tifindex 3
+\t\twdev 0x1
+\t\taddr aa:bb:cc:dd:ee:ff
+\t\ttype managed
+"""
+    from nettest.probes.wifi import _iw_dev_interfaces
+    assert _iw_dev_interfaces(out) == ["wlp3s0"]
+
+
 async def test_wifi_probe_returns_failure_when_disabled():
     ctx = ProbeContext(hostname="h", interval_ms=1000, timeout_ms=1000)
     probe = WifiProbe(ctx, enabled=False)
