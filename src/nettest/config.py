@@ -103,7 +103,7 @@ class StreamTarget(_Strict):
     # speedtest endpoints don't gate on UA. Override in config if a
     # different geographically-closer endpoint is preferred.
     url: str = "https://speedtest.london.linode.com/100MB-london.bin"
-    duration_s: PositiveInt = 60
+    duration_s: PositiveInt = 10
 
 
 class Targets(_Strict):

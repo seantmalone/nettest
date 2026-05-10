@@ -20,7 +20,7 @@ targets:
   tcp: []
   stream:
     url: https://speedtest.london.linode.com/100MB-london.bin
-    duration_s: 60
+    duration_s: 10
 
 probes:
   ping:         { interval_ms: 250,    timeout_ms: 1000, packet_size: 56 }
