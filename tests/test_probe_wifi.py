@@ -65,6 +65,25 @@ Connected to aa:bb:cc:dd:ee:ff (on wlan0)
     assert info["bssid"] == "aa:bb:cc:dd:ee:ff"
 
 
+def test_parse_system_profiler_mac():
+    out = """\
+            Current Network Information:
+              Home-5G:
+                PHY Mode: 802.11ax
+                BSSID: aa:bb:cc:dd:ee:ff
+                Channel: 36 (5GHz, 80MHz)
+                Signal / Noise: -52 dBm / -90 dBm
+                Transmit Rate: 866
+"""
+    from nettest.probes.wifi import parse_system_profiler_output
+    info = parse_system_profiler_output(out)
+    assert info["ssid"] == "Home-5G"
+    assert info["bssid"] == "aa:bb:cc:dd:ee:ff"
+    assert info["rssi_dbm"] == -52
+    assert info["noise_dbm"] == -90
+    assert info["link_rate_mbps"] == 866
+
+
 def test_parse_iw_dev_lists_interfaces():
     out = """\
 phy#0

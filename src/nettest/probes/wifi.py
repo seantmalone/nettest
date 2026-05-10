@@ -40,6 +40,72 @@ def parse_airport_output(out: str) -> dict[str, Any]:
     return info
 
 
+def parse_system_profiler_output(out: str) -> dict[str, Any]:
+    """Parse `system_profiler SPAirPortDataType` output.
+
+    The relevant section looks like:
+
+        Current Network Information:
+          <SSID>:
+            BSSID: aa:bb:cc:dd:ee:ff
+            Channel: 36 (5GHz, 80MHz)
+            Signal / Noise: -52 dBm / -90 dBm
+            Transmit Rate: 866
+    """
+    info: dict[str, Any] = {}
+    lines = out.splitlines()
+    # Find the "Current Network Information:" header.
+    idx = -1
+    for i, raw in enumerate(lines):
+        if raw.strip() == "Current Network Information:":
+            idx = i
+            break
+    if idx == -1:
+        return info
+    header_indent = len(lines[idx]) - len(lines[idx].lstrip())
+    # The next non-empty line at a deeper indent is the SSID key (ending in ":").
+    ssid_indent = -1
+    for j in range(idx + 1, len(lines)):
+        raw = lines[j]
+        if not raw.strip():
+            continue
+        cur_indent = len(raw) - len(raw.lstrip())
+        if cur_indent <= header_indent:
+            break
+        stripped = raw.strip()
+        if ssid_indent == -1:
+            if stripped.endswith(":"):
+                info["ssid"] = stripped[:-1].strip()
+                ssid_indent = cur_indent
+            continue
+        # Deeper than SSID indent means key/value pairs for this SSID.
+        if cur_indent <= ssid_indent:
+            break
+        if ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if key == "BSSID":
+            info["bssid"] = value
+        elif key == "Channel":
+            info["channel"] = value
+        elif key == "Signal / Noise":
+            # e.g. "-52 dBm / -90 dBm"
+            parts = [p.strip() for p in value.split("/")]
+            if parts:
+                m = re.search(r"-?\d+", parts[0])
+                if m:
+                    info["rssi_dbm"] = int(m.group(0))
+            if len(parts) > 1:
+                m = re.search(r"-?\d+", parts[1])
+                if m:
+                    info["noise_dbm"] = int(m.group(0))
+        elif key == "Transmit Rate":
+            info["link_rate_mbps"] = _to_int(value)
+    return info
+
+
 def parse_netsh_output(out: str) -> dict[str, Any]:
     info: dict[str, Any] = {}
     for raw in out.splitlines():
@@ -119,21 +185,26 @@ class WifiProbe(Probe):
                 "-I",
             ]
             rc, stdout = await _run_cmd(cmd)
-            if rc == -1:
+            info: dict[str, Any] = {}
+            if rc == 0:
+                info = parse_airport_output(stdout)
+            # macOS Sonoma 14+ removed airport; fall back to system_profiler
+            # when airport is missing, fails, or returns insufficient data.
+            if "ssid" not in info or info.get("rssi_dbm") is None:
+                sp_rc, sp_out = await _run_cmd(
+                    ["system_profiler", "SPAirPortDataType", "-detailLevel", "basic"],
+                )
+                if sp_rc == 0:
+                    sp_info = parse_system_profiler_output(sp_out)
+                    if sp_info:
+                        info = sp_info
+            if not info:
                 return Result(
                     ts=ts, host=self.ctx.hostname, probe=self.name,
                     target=target.label(), ok=False,
                     duration_ms=(time.perf_counter() - t0) * 1000,
-                    error="tool not found: airport",
+                    error="no wifi tool available",
                 )
-            if rc != 0:
-                return Result(
-                    ts=ts, host=self.ctx.hostname, probe=self.name,
-                    target=target.label(), ok=False,
-                    duration_ms=(time.perf_counter() - t0) * 1000,
-                    error=f"exit {rc}",
-                )
-            info = parse_airport_output(stdout)
         elif sysname == "Windows":
             rc, stdout = await _run_cmd(["netsh", "wlan", "show", "interfaces"])
             if rc == -1:
