@@ -225,7 +225,7 @@ CREATE TABLE rollups_1h (
 
 **Dashboard query strategy:** time range < 1 hr → raw `results`; 1 hr–24 hr → `rollups_1m`; > 24 hr → `rollups_1h`. Keeps long-range charts fast.
 
-**JSONL format:** one line per `Result`, the verbatim JSON encoding of the `Result` record shown above — no extra framing, no header. New daily file rolls over at local midnight.
+**JSONL format:** one line per `Result`, the verbatim JSON encoding of the `Result` record shown above — no extra framing, no header. New daily file rolls over at **UTC midnight** (matching the UTC `Result.ts` so SQLite and JSONL stay aligned and cross-machine timestamps are unambiguous).
 
 **Writes are batched** every 100 ms or 50 records (whichever first) so we don't fsync per probe.
 
