@@ -6,7 +6,9 @@ from nettest.config import (
     DnsOnlyFail,
     LatencySpike,
     MicroOutage,
+    MtuChange,
     StreamStall,
+    WifiDrop,
 )
 from nettest.events import Event
 from nettest.patterns.window import RollingWindow
@@ -124,4 +126,69 @@ def detect_stream_stall(w: RollingWindow, last: Result, cfg: StreamStall) -> Eve
         severity="warn",
         summary=f"{total_stalls} stream stalls on {last.target} in last minute",
         details={"target": last.target, "stalls": total_stalls},
+    )
+
+
+def detect_wifi_drop(w: RollingWindow, last: Result, cfg: WifiDrop) -> Event | None:
+    if last.probe != "wifi":
+        return None
+    recent = w.recent_for(
+        probe="wifi", target=last.target, window_s=float(cfg.window_s), now=last.ts,
+    )
+    rssis = [
+        int(r.metrics["rssi_dbm"])
+        for r in recent
+        if r.ok and r.metrics.get("rssi_dbm") is not None
+    ]
+    if len(rssis) < 2:
+        return None
+    delta = max(rssis) - min(rssis)
+    if delta < cfg.delta_dbm:
+        return None
+    return Event(
+        ts_start=recent[0].ts if recent else last.ts,
+        ts_end=last.ts,
+        kind="wifi_drop",
+        severity="info",
+        summary=(
+            f"wifi RSSI varied by {delta} dBm on {last.target} "
+            f"in {cfg.window_s}s (max={max(rssis)} min={min(rssis)})"
+        ),
+        details={
+            "target": last.target, "delta_dbm": delta,
+            "max_dbm": max(rssis), "min_dbm": min(rssis),
+        },
+    )
+
+
+def detect_mtu_change(w: RollingWindow, last: Result, cfg: MtuChange) -> Event | None:
+    if last.probe != "mtu":
+        return None
+    cur = last.metrics.get("mtu")
+    if cur is None:
+        return None
+    recent = w.recent_for(probe="mtu", target=last.target, now=last.ts)
+    # Find the most recent prior result with an mtu metric.
+    prev_mtu: int | None = None
+    for r in reversed(recent[:-1]):
+        v = r.metrics.get("mtu")
+        if v is not None:
+            prev_mtu = int(v)
+            break
+    if prev_mtu is None:
+        return None
+    cur_int = int(cur)
+    if cur_int >= prev_mtu:
+        return None
+    return Event(
+        ts_start=last.ts,
+        ts_end=last.ts,
+        kind="mtu_change",
+        severity="warn",
+        summary=(
+            f"working MTU on {last.target} dropped from {prev_mtu} to {cur_int}"
+        ),
+        details={
+            "target": last.target, "prev_mtu": prev_mtu, "mtu": cur_int,
+        },
     )

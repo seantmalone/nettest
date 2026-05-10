@@ -6,7 +6,9 @@ from nettest.patterns.rules import (
     detect_dns_only_fail,
     detect_latency_spike,
     detect_micro_outage,
+    detect_mtu_change,
     detect_stream_stall,
+    detect_wifi_drop,
 )
 from nettest.patterns.window import RollingWindow
 from nettest.types import Result
@@ -85,3 +87,66 @@ def test_stream_stall_fires_on_two_stalls_in_minute():
     cfg = Patterns()
     e = detect_stream_stall(w, last=w.results[-1], cfg=cfg.stream_stall)
     assert e is not None
+
+
+def test_wifi_drop_fires_on_large_rssi_swing():
+    base = datetime(2026, 5, 10, 18, 0, 0, tzinfo=UTC)
+    w = RollingWindow()
+    w.add(_r(base, probe="wifi", target="local", metrics={"rssi_dbm": -45}))
+    w.add(_r(
+        base + timedelta(seconds=1), probe="wifi", target="local",
+        metrics={"rssi_dbm": -50},
+    ))
+    last = _r(
+        base + timedelta(seconds=2), probe="wifi", target="local",
+        metrics={"rssi_dbm": -70},
+    )
+    w.add(last)
+    cfg = Patterns()
+    e = detect_wifi_drop(w, last=last, cfg=cfg.wifi_drop)
+    assert e is not None
+    assert e.kind == "wifi_drop"
+    assert e.severity == "info"
+
+
+def test_wifi_drop_silent_on_stable_signal():
+    base = datetime(2026, 5, 10, 18, 0, 0, tzinfo=UTC)
+    w = RollingWindow()
+    for i in range(5):
+        w.add(_r(
+            base + timedelta(seconds=i), probe="wifi", target="local",
+            metrics={"rssi_dbm": -50 - (i % 2)},
+        ))
+    cfg = Patterns()
+    e = detect_wifi_drop(w, last=w.results[-1], cfg=cfg.wifi_drop)
+    assert e is None
+
+
+def test_mtu_change_fires_when_mtu_decreases():
+    base = datetime(2026, 5, 10, 18, 0, 0, tzinfo=UTC)
+    w = RollingWindow()
+    w.add(_r(base, probe="mtu", target="1.1.1.1", metrics={"mtu": 1500}))
+    last = _r(
+        base + timedelta(seconds=1), probe="mtu", target="1.1.1.1",
+        metrics={"mtu": 1400},
+    )
+    w.add(last)
+    cfg = Patterns()
+    e = detect_mtu_change(w, last=last, cfg=cfg.mtu_change)
+    assert e is not None
+    assert e.kind == "mtu_change"
+    assert e.severity == "warn"
+
+
+def test_mtu_change_silent_on_increase():
+    base = datetime(2026, 5, 10, 18, 0, 0, tzinfo=UTC)
+    w = RollingWindow()
+    w.add(_r(base, probe="mtu", target="1.1.1.1", metrics={"mtu": 1400}))
+    last = _r(
+        base + timedelta(seconds=1), probe="mtu", target="1.1.1.1",
+        metrics={"mtu": 1500},
+    )
+    w.add(last)
+    cfg = Patterns()
+    e = detect_mtu_change(w, last=last, cfg=cfg.mtu_change)
+    assert e is None

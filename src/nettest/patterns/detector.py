@@ -14,7 +14,9 @@ from nettest.patterns.rules import (
     detect_dns_only_fail,
     detect_latency_spike,
     detect_micro_outage,
+    detect_mtu_change,
     detect_stream_stall,
+    detect_wifi_drop,
 )
 from nettest.patterns.window import RollingWindow
 from nettest.types import Result
@@ -58,6 +60,8 @@ class PatternDetector:
                 (detect_dns_only_fail, ("dns_only_fail", "*")),
                 (detect_latency_spike, ("latency_spike", f"{r.probe}/{r.target}")),
                 (detect_stream_stall, ("stream_stall", r.target)),
+                (detect_wifi_drop, ("wifi_drop", r.target)),
+                (detect_mtu_change, ("mtu_change", r.target)),
             ):
                 e = self._dispatch(fn, r, scope)
                 if e is not None:
@@ -83,6 +87,8 @@ class PatternDetector:
             detect_dns_only_fail: self._cfg.dns_only_fail,
             detect_latency_spike: self._cfg.latency_spike,
             detect_stream_stall: self._cfg.stream_stall,
+            detect_wifi_drop: self._cfg.wifi_drop,
+            detect_mtu_change: self._cfg.mtu_change,
         }[fn]
         e = fn(self._window, r, cfg_attr)
         if e is not None:

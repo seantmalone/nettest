@@ -132,12 +132,23 @@ class StreamStall(_Strict):
     min_stalls_per_minute: PositiveInt = 2
 
 
+class WifiDrop(_Strict):
+    delta_dbm: PositiveInt = 10
+    window_s: PositiveInt = 5
+
+
+class MtuChange(_Strict):
+    pass
+
+
 class Patterns(_Strict):
     micro_outage: MicroOutage = Field(default_factory=MicroOutage)
     correlated_loss: CorrelatedLoss = Field(default_factory=CorrelatedLoss)
     latency_spike: LatencySpike = Field(default_factory=LatencySpike)
     dns_only_fail: DnsOnlyFail = Field(default_factory=DnsOnlyFail)
     stream_stall: StreamStall = Field(default_factory=StreamStall)
+    wifi_drop: WifiDrop = Field(default_factory=WifiDrop)
+    mtu_change: MtuChange = Field(default_factory=MtuChange)
     cooldown_ms: PositiveInt = 5000  # min gap between same-scope event emissions
 
 
