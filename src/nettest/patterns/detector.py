@@ -61,6 +61,8 @@ class PatternDetector:
             ):
                 e = self._dispatch(fn, r, scope)
                 if e is not None:
+                    if e.kind not in r.tags:
+                        r.tags.append(e.kind)
                     with contextlib.suppress(Exception):
                         self._on_event(e)
 
