@@ -37,4 +37,4 @@ def test_resolve_dns_includes_cached_and_uncached_targets():
     assert ("8.8.4.4", "google.com") in cached_hosts
     assert ("1.1.1.1", "google.com") in cached_hosts
     assert all(t.host == "google.com" for t in resolved.dns_cached)
-    assert all(".dnscheck.example.com" in t.host for t in resolved.dns_uncached)
+    assert all(t.host == "dnscheck.example.com" for t in resolved.dns_uncached)

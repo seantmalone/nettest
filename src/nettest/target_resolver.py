@@ -1,7 +1,6 @@
 """Expand `auto:` tokens and produce concrete Target lists per probe."""
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 
 from nettest.autodetect import default_gateway, system_dns_resolvers
@@ -53,8 +52,13 @@ def resolve_targets(cfg: Config) -> ResolvedTargets:
     resolvers = _expand_auto_hosts(cfg.targets.dns.resolvers)
     for r in resolvers:
         rt.dns_cached.append(Target(kind="dns", host=cfg.targets.dns.cached_query, resolver=r))
-        unique = f"{uuid.uuid4().hex[:12]}.{cfg.targets.dns.uncached_domain}"
-        rt.dns_uncached.append(Target(kind="dns", host=unique, resolver=r))
+        # DnsUncachedProbe generates a fresh subdomain per call. The Target
+        # stores the base domain as a placeholder (used in labels/logs only).
+        rt.dns_uncached.append(Target(
+            kind="dns",
+            host=cfg.targets.dns.uncached_domain,
+            resolver=r,
+        ))
 
     for url in cfg.targets.http:
         rt.http.append(Target(kind="url", host=url))
