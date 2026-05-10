@@ -96,7 +96,9 @@ class StreamTarget(_Strict):
 
 
 class Targets(_Strict):
-    ping: list[str] = Field(default_factory=lambda: ["auto:gateway", "1.1.1.1", "8.8.8.8", "9.9.9.9"])
+    ping: list[str] = Field(
+        default_factory=lambda: ["auto:gateway", "1.1.1.1", "8.8.8.8", "9.9.9.9"]
+    )
     dns: DnsTargets = Field(default_factory=DnsTargets)
     http: list[str] = Field(default_factory=lambda: [
         "https://www.google.com", "https://www.cloudflare.com",
@@ -190,10 +192,18 @@ class ProbeThreshold(_Strict):
 
 
 class Thresholds(_Strict):
-    ping: ProbeThreshold = Field(default_factory=lambda: ProbeThreshold(warn_p95_ms=50, crit_p95_ms=200))
-    dns_cached: ProbeThreshold = Field(default_factory=lambda: ProbeThreshold(warn_p95_ms=30, crit_p95_ms=150))
-    dns_uncached: ProbeThreshold = Field(default_factory=lambda: ProbeThreshold(warn_p95_ms=100, crit_p95_ms=500))
-    http: ProbeThreshold = Field(default_factory=lambda: ProbeThreshold(warn_p95_ms=500, crit_p95_ms=2000))
+    ping: ProbeThreshold = Field(
+        default_factory=lambda: ProbeThreshold(warn_p95_ms=50, crit_p95_ms=200)
+    )
+    dns_cached: ProbeThreshold = Field(
+        default_factory=lambda: ProbeThreshold(warn_p95_ms=30, crit_p95_ms=150)
+    )
+    dns_uncached: ProbeThreshold = Field(
+        default_factory=lambda: ProbeThreshold(warn_p95_ms=100, crit_p95_ms=500)
+    )
+    http: ProbeThreshold = Field(
+        default_factory=lambda: ProbeThreshold(warn_p95_ms=500, crit_p95_ms=2000)
+    )
 
 
 class Config(_Strict):

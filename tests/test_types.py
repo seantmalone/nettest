@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -7,7 +7,7 @@ from nettest.types import Result, Target
 
 def test_result_minimal_construction():
     r = Result(
-        ts=datetime(2026, 5, 10, 18, 42, 31, 241000, tzinfo=timezone.utc),
+        ts=datetime(2026, 5, 10, 18, 42, 31, 241000, tzinfo=UTC),
         host="sean-mbp",
         probe="ping",
         target="1.1.1.1",
@@ -22,7 +22,7 @@ def test_result_minimal_construction():
 
 def test_result_to_json_dict_serializes_iso_utc():
     r = Result(
-        ts=datetime(2026, 5, 10, 18, 42, 31, 241000, tzinfo=timezone.utc),
+        ts=datetime(2026, 5, 10, 18, 42, 31, 241000, tzinfo=UTC),
         host="sean-mbp",
         probe="http",
         target="https://google.com",
@@ -51,7 +51,8 @@ def test_result_rejects_naive_timestamp():
 
 
 def test_result_rejects_non_utc_timestamp():
-    from datetime import timedelta as _td, timezone as _tz
+    from datetime import timedelta as _td
+    from datetime import timezone as _tz
     with pytest.raises(ValueError, match="UTC"):
         Result(
             ts=datetime(2026, 5, 10, 18, 42, 31, tzinfo=_tz(_td(hours=-5))),

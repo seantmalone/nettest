@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
-
 
 ProbeKind = Literal[
     "ping", "dns_cached", "dns_uncached", "http", "tcp_connect",
@@ -48,7 +47,7 @@ class Result:
     tags: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if self.ts.tzinfo is None or self.ts.tzinfo.utcoffset(self.ts) != timezone.utc.utcoffset(None):
+        if self.ts.tzinfo is None or self.ts.tzinfo.utcoffset(self.ts) != UTC.utcoffset(None):
             raise ValueError("Result.ts must be timezone-aware UTC")
 
     def to_json_dict(self) -> dict[str, Any]:

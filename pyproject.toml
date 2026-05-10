@@ -64,3 +64,7 @@ select = ["E", "F", "I", "B", "UP", "N", "SIM"]
 python_version = "3.11"
 strict = true
 files = ["src/nettest"]
+
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true

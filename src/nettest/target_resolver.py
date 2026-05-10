@@ -63,7 +63,11 @@ def resolve_targets(cfg: Config) -> ResolvedTargets:
         rt.tcp_connect.append(Target(kind="tcp", host=tcp.host, port=tcp.port))
 
     rt.stream.append(
-        Target(kind="stream", host=cfg.targets.stream.url, extra={"duration_s": cfg.targets.stream.duration_s})
+        Target(
+            kind="stream",
+            host=cfg.targets.stream.url,
+            extra={"duration_s": cfg.targets.stream.duration_s},
+        )
     )
 
     for url in cfg.targets.http:
