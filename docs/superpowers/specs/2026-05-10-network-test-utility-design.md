@@ -56,7 +56,15 @@ Goal: a continuously-running utility that probes the network at high frequency (
 - **Single asyncio process.** All probes run as coroutines on one event loop, scheduled at independent cadences.
 - **Result bus.** In-memory fan-out (one `asyncio.Queue` per consumer). Decouples probes from outputs; new probes or new outputs are isolated changes.
 - **Consumers:** storage sinks (SQLite + JSONL), pattern detector, TUI renderer, web server (WebSocket pusher).
-- **Backpressure policy.** Storage and pattern detector are never dropped. UI consumers (TUI, WS) drop oldest entries when their queue exceeds 1000, and increment a logged counter.
+- **Consumer registration interface:**
+  ```python
+  bus.subscribe(
+      name: str,
+      drop_policy: Literal["never", "drop_oldest"],
+      max_depth: int = 1000,
+  ) -> asyncio.Queue
+  ```
+- **Backpressure policy.** Storage and pattern detector subscribe with `drop_policy="never"`. UI consumers (TUI, WS) subscribe with `drop_policy="drop_oldest"`, `max_depth=1000`; drops increment a logged counter surfaced in the TUI status bar.
 
 ### Why one process
 
@@ -73,10 +81,20 @@ Every probe implements:
 class Probe:
     name: str
     interval_ms: int
-    async def run(self, target) -> Result: ...
+    timeout_ms: int
+
+    def __init__(self, config: ProbeConfig): ...
+
+    async def run(
+        self,
+        target: Target,
+        cancel: asyncio.Event,
+    ) -> Result: ...
 ```
 
-The scheduler invokes each probe at its cadence per target. Probes are isolated — they don't know about storage, UI, or each other.
+- `ProbeConfig` is the relevant slice of the parsed config (timeouts, resolver lists, packet sizes, etc.) — passed at construction so `run()` doesn't re-read config per call.
+- `cancel` is set by the scheduler when the tool is shutting down or the probe is being paused; probes must observe it within their timeout window.
+- The scheduler invokes each probe at its cadence per target. Probes are isolated — they don't know about storage, UI, or each other.
 
 | Probe | Default cadence | What it measures | Implementation |
 |---|---|---|---|
@@ -207,7 +225,11 @@ CREATE TABLE rollups_1h (
 
 **Dashboard query strategy:** time range < 1 hr → raw `results`; 1 hr–24 hr → `rollups_1m`; > 24 hr → `rollups_1h`. Keeps long-range charts fast.
 
+**JSONL format:** one line per `Result`, the verbatim JSON encoding of the `Result` record shown above — no extra framing, no header. New daily file rolls over at local midnight.
+
 **Writes are batched** every 100 ms or 50 records (whichever first) so we don't fsync per probe.
+
+**Retention ordering invariant:** the rollup pipeline must compute the next minute's rollup *before* the retention task prunes raw rows from that minute's window. In practice this is trivial (rollups run every 60 s, retention runs once an hour, raw retention is 7 days), but the implementation must explicitly enforce ordering rather than relying on schedule luck — e.g., retention reads the latest `ts_bucket` from `rollups_1m` and refuses to delete `results` rows newer than that.
 
 ## Pattern detection
 
@@ -261,7 +283,7 @@ This is the differentiator. Raw stats tell you *something failed*; patterns tell
 | Key | Action |
 |---|---|
 | `q` | Quit |
-| `p` | Pause probes (marks a clear break before/after a network change) |
+| `p` | Pause/resume all probes — sets the cancel event on running probes, halts scheduling, and writes a `paused`/`resumed` event to the events log so the break is visible in history |
 | `d` | Drill into selected row's detail view |
 | `e` | Jump to events tab |
 | `h` | Jump to history tab |
