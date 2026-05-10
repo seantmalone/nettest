@@ -38,21 +38,24 @@ class MtuProbe(Probe):
         )
 
     async def _ping_df(self, host: str, payload_size: int) -> bool:
+        # Probe.run() enforces self.ctx.timeout_ms as the total budget; split
+        # that across all sizes so the iteration fits within the budget.
+        per_iter_ms = max(200, self.ctx.timeout_ms // max(1, len(self.sizes)))
         sysname = platform.system()
         if sysname == "Windows":
             cmd = [
                 "ping", "-n", "1", "-f", "-l", str(payload_size),
-                "-w", str(self.ctx.timeout_ms), host,
+                "-w", str(per_iter_ms), host,
             ]
         elif sysname == "Darwin":
             cmd = [
                 "ping", "-c", "1", "-D", "-s", str(payload_size),
-                "-W", str(self.ctx.timeout_ms), host,
+                "-W", str(per_iter_ms), host,
             ]
         else:
             cmd = [
                 "ping", "-c", "1", "-M", "do", "-s", str(payload_size),
-                "-W", str(max(1, self.ctx.timeout_ms // 1000)), host,
+                "-W", str(max(1, per_iter_ms // 1000)), host,
             ]
         proc = await asyncio.create_subprocess_exec(
             *cmd,
