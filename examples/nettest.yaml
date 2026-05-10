@@ -28,7 +28,7 @@ probes:
   dns_uncached: { interval_ms: 250,    timeout_ms: 2000 }
   http:         { interval_ms: 2000,   timeout_ms: 5000 }
   tcp_connect:  { interval_ms: 2000,   timeout_ms: 3000 }
-  traceroute:   { interval_ms: 60000,  timeout_ms: 5000, max_hops: 30 }
+  traceroute:   { interval_ms: 60000,  timeout_ms: 45000, max_hops: 30 }
   stream:       { restart_interval_ms: 60000, stall_threshold_ms: 200 }
   bandwidth:    { interval_ms: 300000, timeout_ms: 30000 }
   mtu:          { interval_ms: 300000, timeout_ms: 2000, sizes: [1500, 1472, 1400, 1200, 1000, 576] }

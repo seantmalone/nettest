@@ -39,8 +39,10 @@ class TcpConnectProbe(ProbeTimings):
 
 
 class TracerouteProbe(ProbeTimings):
+    # Real-world traceroute over 30 hops with `-q 3 -w 1` averages ~10-30s.
+    # 45s budget gives headroom without hanging too long when a hop drops.
     interval_ms: PositiveInt = 60_000
-    timeout_ms: PositiveInt = 5000
+    timeout_ms: PositiveInt = 45_000
     max_hops: PositiveInt = 30
 
 
