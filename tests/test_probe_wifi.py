@@ -103,3 +103,67 @@ async def test_wifi_probe_returns_failure_when_disabled():
     res = await probe.run(Target(kind="host", host="local"), cancel=asyncio.Event())
     assert res.ok is False
     assert res.error == "disabled"
+
+
+async def test_wifi_probe_reports_wifi_off_on_mac():
+    """When `system_profiler` reports Wi-Fi powered off, return a clear error."""
+    from unittest.mock import patch
+
+    sp_off_out = """\
+Wi-Fi:
+
+      Software Versions:
+          CoreWLAN: 16.0
+      Interfaces:
+        en0:
+          Card Type: Wi-Fi
+          MAC Address: 9a:16:69:8b:63:99
+          Status: Off
+"""
+
+    async def fake_run(cmd):
+        if cmd[0].endswith("airport"):
+            return (1, "")  # airport tool failed/missing
+        if cmd[0] == "system_profiler":
+            return (0, sp_off_out)
+        return (-1, "")
+
+    ctx = ProbeContext(hostname="h", interval_ms=1000, timeout_ms=2000)
+    probe = WifiProbe(ctx, enabled=True)
+    with (
+        patch("nettest.probes.wifi.platform.system", return_value="Darwin"),
+        patch("nettest.probes.wifi._run_cmd", side_effect=fake_run),
+    ):
+        res = await probe.run(Target(kind="host", host="local"), cancel=asyncio.Event())
+    assert res.ok is False
+    assert res.error == "wifi off"
+
+
+async def test_wifi_probe_reports_not_connected_on_mac():
+    """system_profiler runs but there's no 'Current Network Information' section."""
+    from unittest.mock import patch
+
+    sp_out = """\
+Wi-Fi:
+      Interfaces:
+        en0:
+          Card Type: Wi-Fi
+          Status: On
+"""
+
+    async def fake_run(cmd):
+        if cmd[0].endswith("airport"):
+            return (1, "")
+        if cmd[0] == "system_profiler":
+            return (0, sp_out)
+        return (-1, "")
+
+    ctx = ProbeContext(hostname="h", interval_ms=1000, timeout_ms=2000)
+    probe = WifiProbe(ctx, enabled=True)
+    with (
+        patch("nettest.probes.wifi.platform.system", return_value="Darwin"),
+        patch("nettest.probes.wifi._run_cmd", side_effect=fake_run),
+    ):
+        res = await probe.run(Target(kind="host", host="local"), cancel=asyncio.Event())
+    assert res.ok is False
+    assert res.error == "not connected to wifi"

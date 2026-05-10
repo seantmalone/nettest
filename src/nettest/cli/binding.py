@@ -4,13 +4,20 @@ from __future__ import annotations
 import ipaddress
 import socket
 
+# RFC 6598 shared address space (CGNAT) — used by carrier networks AND
+# Tailscale by default. Python's ipaddress.is_private doesn't include this
+# range, so we check it explicitly.
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
 
 def is_rfc1918(ip: str) -> bool:
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    return addr.is_private or addr.is_loopback
+    if addr.is_private or addr.is_loopback or addr.is_link_local:
+        return True
+    return isinstance(addr, ipaddress.IPv4Address) and addr in _CGNAT
 
 
 def warn_if_public_bind(bind: str, interfaces: list[str]) -> str | None:

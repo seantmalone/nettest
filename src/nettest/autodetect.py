@@ -1,6 +1,7 @@
 """Cross-platform autodetection of default gateway and system DNS resolvers."""
 from __future__ import annotations
 
+import ipaddress
 import platform
 import re
 import subprocess
@@ -18,10 +19,28 @@ def default_gateway() -> str | None:
     system = platform.system()
     if system == "Darwin":
         rc, out = _run(["route", "-n", "get", "default"])
-        if rc != 0:
-            return None
-        m = re.search(r"gateway:\s*([0-9.]+)", out)
-        return m.group(1) if m else None
+        if rc == 0:
+            m = re.search(r"gateway:\s*([0-9.]+)", out)
+            if m:
+                return m.group(1)
+        # Fallback: when the default route is via a tunnel interface (e.g.
+        # Tailscale's utun*), `route -n get default` returns the interface
+        # but no `gateway:` line. Scan netstat for the first non-tunnel
+        # default route with a real IPv4 gateway.
+        rc, out = _run(["netstat", "-rn", "-f", "inet"])
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 4 and parts[0] == "default":
+                    gw, iface = parts[1], parts[-1]
+                    if iface.startswith(("utun", "ipsec")):
+                        continue
+                    try:
+                        ipaddress.ip_address(gw)
+                    except ValueError:
+                        continue
+                    return gw
+        return None
     if system == "Linux":
         rc, out = _run(["ip", "route", "show", "default"])
         if rc != 0:

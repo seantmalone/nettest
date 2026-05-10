@@ -28,3 +28,18 @@ def test_warn_if_public_bind_returns_none_for_private() -> None:
 def test_warn_if_public_bind_returns_none_for_localhost_bind() -> None:
     msg = warn_if_public_bind("127.0.0.1", interfaces=["8.8.8.8"])
     assert msg is None
+
+
+def test_cgnat_treated_as_private() -> None:
+    # RFC 6598 shared address space, also used by Tailscale by default.
+    assert is_rfc1918("100.64.0.1") is True
+    assert is_rfc1918("100.84.29.118") is True
+    assert is_rfc1918("100.127.255.255") is True
+    # Just outside the CGNAT range:
+    assert is_rfc1918("100.63.255.255") is False
+    assert is_rfc1918("100.128.0.0") is False
+
+
+def test_warn_skipped_for_tailscale_only_interface() -> None:
+    msg = warn_if_public_bind("0.0.0.0", interfaces=["100.84.29.118", "192.168.1.5"])
+    assert msg is None

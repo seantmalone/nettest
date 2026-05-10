@@ -188,16 +188,32 @@ class WifiProbe(Probe):
             info: dict[str, Any] = {}
             if rc == 0:
                 info = parse_airport_output(stdout)
-            # macOS Sonoma 14+ removed airport; fall back to system_profiler
-            # when airport is missing, fails, or returns insufficient data.
+            # macOS Sonoma 14+ removed airport; fall back to system_profiler.
+            # `-detailLevel basic` omits the "Current Network Information"
+            # section, so use the default (medium) detail level which always
+            # includes it when a network is connected.
             if "ssid" not in info or info.get("rssi_dbm") is None:
                 sp_rc, sp_out = await _run_cmd(
-                    ["system_profiler", "SPAirPortDataType", "-detailLevel", "basic"],
+                    ["system_profiler", "SPAirPortDataType"],
                 )
                 if sp_rc == 0:
                     sp_info = parse_system_profiler_output(sp_out)
                     if sp_info:
                         info = sp_info
+                    elif "Status: Off" in sp_out:
+                        return Result(
+                            ts=ts, host=self.ctx.hostname, probe=self.name,
+                            target=target.label(), ok=False,
+                            duration_ms=(time.perf_counter() - t0) * 1000,
+                            error="wifi off",
+                        )
+                    elif "Current Network Information:" not in sp_out:
+                        return Result(
+                            ts=ts, host=self.ctx.hostname, probe=self.name,
+                            target=target.label(), ok=False,
+                            duration_ms=(time.perf_counter() - t0) * 1000,
+                            error="not connected to wifi",
+                        )
             if not info:
                 return Result(
                     ts=ts, host=self.ctx.hostname, probe=self.name,
