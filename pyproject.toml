@@ -68,3 +68,7 @@ files = ["src/nettest"]
 [[tool.mypy.overrides]]
 module = "yaml"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "icmplib"
+ignore_missing_imports = true
