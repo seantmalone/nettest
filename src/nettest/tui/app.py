@@ -97,7 +97,7 @@ class NettestApp(App[None]):
         table: DataTable[Any] = self.query_one("#targets", DataTable)
         table.add_columns("Probe", "Target", "Last", "p50", "p95", "Loss%", "Spark")
         self._row_keys: dict[tuple[str, str], Any] = {}
-        asyncio.create_task(self._consume())
+        self._consume_task = asyncio.create_task(self._consume())
         self.set_interval(0.25, self._refresh)
 
     async def _consume(self) -> None:
