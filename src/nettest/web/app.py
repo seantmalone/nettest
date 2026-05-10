@@ -116,15 +116,20 @@ def build_app(
         return Response(buf.getvalue(), media_type="text/csv")
 
     if bus is not None:
+        bus_ref = bus
+
         @app.websocket("/ws/live")
         async def ws_live(ws: WebSocket) -> None:
             await ws.accept()
             sub_name = f"ws:{id(ws)}"
-            q = bus.subscribe(sub_name, drop_policy="drop_oldest", max_depth=500)
-            with contextlib.suppress(Exception):
-                while True:
-                    r = await q.get()
-                    await ws.send_json(r.to_json_dict())
+            q = bus_ref.subscribe(sub_name, drop_policy="drop_oldest", max_depth=500)
+            try:
+                with contextlib.suppress(Exception):
+                    while True:
+                        r = await q.get()
+                        await ws.send_json(r.to_json_dict())
+            finally:
+                bus_ref.unsubscribe(sub_name)
 
     return app
 

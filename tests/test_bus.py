@@ -61,3 +61,14 @@ async def test_subscribe_rejects_duplicate_name():
     bus.subscribe("a", drop_policy="never")
     with pytest.raises(ValueError, match="already subscribed"):
         bus.subscribe("a", drop_policy="never")
+
+
+async def test_unsubscribe_removes_subscriber():
+    bus = ResultBus()
+    bus.subscribe("a", drop_policy="never")
+    assert "a" in bus.subscribers()
+    bus.unsubscribe("a")
+    assert "a" not in bus.subscribers()
+    # Can re-subscribe with the same name
+    bus.subscribe("a", drop_policy="never")
+    assert "a" in bus.subscribers()

@@ -50,6 +50,10 @@ class ResultBus:
                         break
                 sub.queue.put_nowait(result)
 
+    def unsubscribe(self, name: str) -> None:
+        """Remove a subscriber. Silently no-ops if name not present."""
+        self._subs.pop(name, None)
+
     def drop_count(self, name: str) -> int:
         return self._subs[name].drops
 
