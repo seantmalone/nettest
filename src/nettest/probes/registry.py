@@ -46,7 +46,9 @@ def build_probes(
             max_hops=cfg.probes.traceroute.max_hops,
         ),
         "stream": StreamProbe(
-            ctx(cfg.probes.stream.restart_interval_ms, 5000),
+            # Stream's measure() runs for ~duration_s (default 60s); allow ample timeout.
+            # The probe also enforces its own httpx read timeout internally.
+            ctx(cfg.probes.stream.restart_interval_ms, 90_000),
             stall_threshold_ms=cfg.probes.stream.stall_threshold_ms,
         ),
         "mtu": MtuProbe(
