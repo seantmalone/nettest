@@ -212,6 +212,10 @@ def main() -> None:
     if args.snapshot:
         asyncio.run(run_snapshot(sys.argv[1:]))
         return
+    if args.replay_db:
+        from nettest.cli.replay import build_replay_app
+        build_replay_app(Path(args.replay_db)).run()
+        return
     rt = build_runtime(sys.argv[1:])
     try:
         asyncio.run(rt.run())
