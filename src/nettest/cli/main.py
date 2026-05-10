@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sqlite3
 import sys
@@ -120,8 +121,18 @@ class Runtime:
             self.jsonl_sink.stop()
             self.detector.stop()
             self.maintenance.stop()
+
+            # Let uvicorn exit gracefully on its own. Cancelling the web task
+            # mid-flight makes starlette's lifespan receive() raise
+            # CancelledError and uvicorn logs that as an ERROR. should_exit
+            # plus a short await gives it a chance to tear down cleanly.
+            web_task = next((t for t in tasks if t.get_name() == "web"), None)
             if web_server is not None:
                 web_server.should_exit = True
+                if web_task is not None and not web_task.done():
+                    with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                        await asyncio.wait_for(web_task, timeout=2.0)
+
             for t in tasks:
                 if not t.done():
                     t.cancel()
