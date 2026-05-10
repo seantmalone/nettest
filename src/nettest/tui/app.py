@@ -188,7 +188,7 @@ class NettestApp(App[None]):
             self._scheduler.resume()
 
     def action_drill(self) -> None:
-        from nettest.tui.detail import DetailScreen  # type: ignore[import-not-found]
+        from nettest.tui.detail import DetailScreen
         with contextlib.suppress(Exception):
             table: DataTable[Any] = self.query_one("#targets", DataTable)
             row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key
