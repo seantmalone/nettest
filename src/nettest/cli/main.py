@@ -176,11 +176,42 @@ def build_runtime(argv: list[str], data_dir: Path | None = None) -> Runtime:
     )
 
 
+async def run_snapshot(
+    argv: list[str],
+    data_dir: Path | None = None,
+    duration_s: int = 30,
+) -> None:
+    args_with_duration = list(argv) + ["--no-tui", "--no-web", "--duration", f"{duration_s}s"]
+    rt = build_runtime(args_with_duration, data_dir=data_dir)
+    await rt.run()
+    # summarize
+    conn = sqlite3.connect(rt.db_path)
+    try:
+        rows = conn.execute(
+            "SELECT probe, target, COUNT(*), SUM(ok), AVG(duration_ms) "
+            "FROM results GROUP BY probe, target ORDER BY probe, target"
+        ).fetchall()
+    finally:
+        conn.close()
+    print("\nnettest snapshot summary")
+    print("=" * 60)
+    print(f"{'probe':14} {'target':30} {'count':>6} {'loss%':>6} {'avg_ms':>8}")
+    for probe, target, count, ok_count, avg_ms in rows:
+        loss = (1 - (ok_count or 0) / count) * 100 if count else 0
+        print(
+            f"{probe:14} {target[:30]:30} {count:>6} {loss:>6.1f} {avg_ms or 0:>8.1f}"
+        )
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    args = parse_args(sys.argv[1:])
+    if args.snapshot:
+        asyncio.run(run_snapshot(sys.argv[1:]))
+        return
     rt = build_runtime(sys.argv[1:])
     try:
         asyncio.run(rt.run())
