@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="nettest-ws-path" content="/ws/live" />
+<title>nettest dashboard</title>
+<link rel="stylesheet" href="/static/styles.css" />
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>nettest</h1>
+    <div id="status-row"></div>
+    <nav>
+      <button data-range="live" class="active">Live</button>
+      <button data-range="1h">1h</button>
+      <button data-range="24h">24h</button>
+      <button data-range="7d">7d</button>
+    </nav>
+  </header>
+  <main>
+    <section id="charts">
+      <div id="latency"></div>
+      <div id="loss-heatmap"></div>
+      <div id="http-timing"></div>
+      <div id="wifi"></div>
+      <div id="stream-throughput"></div>
+    </section>
+    <aside id="events-panel">
+      <h2>Events</h2>
+      <ul id="events-list"></ul>
+    </aside>
+  </main>
+  <footer>
+    <span id="ws-status">connecting&hellip;</span>
+    <a href="/api/export.csv">export CSV</a>
+  </footer>
+</body>
+</html>
