@@ -6,8 +6,14 @@ from datetime import UTC, datetime
 
 import httpx
 
+from nettest import __version__
 from nettest.probes.base import Probe, ProbeContext
 from nettest.types import Result, Target
+
+# Identifiable UA. Default httpx UA ("python-httpx/X.Y") is rate-limited
+# by Cloudflare and a handful of other speed-test CDNs.
+_UA = f"nettest/{__version__} (+https://github.com/seantmalone/nettest)"
+_HEADERS = {"User-Agent": _UA}
 
 
 class StreamProbe(Probe):
@@ -31,7 +37,7 @@ class StreamProbe(Probe):
         try:
             last_chunk = t0
             async with (
-                httpx.AsyncClient(timeout=timeout) as client,
+                httpx.AsyncClient(timeout=timeout, headers=_HEADERS) as client,
                 client.stream("GET", url) as resp,
             ):
                 if resp.status_code != 200:

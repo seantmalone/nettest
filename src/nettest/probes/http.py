@@ -16,8 +16,12 @@ from typing import Any
 
 import httpx
 
+from nettest import __version__
 from nettest.probes.base import Probe
 from nettest.types import Result, Target
+
+_UA = f"nettest/{__version__} (+https://github.com/seantmalone/nettest)"
+_HEADERS = {"User-Agent": _UA}
 
 
 class _TimingTransport(httpx.AsyncHTTPTransport):
@@ -59,7 +63,8 @@ class HttpProbe(Probe):
         t0 = time.perf_counter()
         try:
             async with httpx.AsyncClient(
-                timeout=timeout, transport=transport, follow_redirects=False,
+                timeout=timeout, transport=transport,
+                follow_redirects=False, headers=_HEADERS,
             ) as client:
                 resp = await client.get(url)
                 _ = resp.content

@@ -38,9 +38,12 @@ class MtuProbe(Probe):
         )
 
     async def _ping_df(self, host: str, payload_size: int) -> bool:
-        # Probe.run() enforces self.ctx.timeout_ms as the total budget; split
-        # that across all sizes so the iteration fits within the budget.
-        per_iter_ms = max(200, self.ctx.timeout_ms // max(1, len(self.sizes)))
+        # Probe.run() enforces self.ctx.timeout_ms as the total budget. Divide
+        # by (sizes + 2) so the iteration fits AND leaves slack for subprocess
+        # startup and Probe.run's own bookkeeping. Without the +2 slack, an
+        # all-fail path exactly equals the outer timeout and gets cancelled
+        # before returning a clean "all sizes blocked" result.
+        per_iter_ms = max(200, self.ctx.timeout_ms // (len(self.sizes) + 2))
         sysname = platform.system()
         if sysname == "Windows":
             cmd = [

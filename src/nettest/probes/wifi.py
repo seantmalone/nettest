@@ -4,12 +4,52 @@ from __future__ import annotations
 import asyncio
 import platform
 import re
+import subprocess
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 from nettest.probes.base import Probe, ProbeContext
 from nettest.types import Result, Target
+
+
+def is_wifi_likely_available() -> bool:
+    """Quick synchronous check used at startup to decide whether to dispatch the wifi probe.
+
+    Returns False when Wi-Fi is clearly off / not present, so the scheduler
+    doesn't fire a probe every cycle generating noise. Conservative: returns
+    True on uncertainty (Linux without iw installed, etc.) so the probe can
+    surface a real error.
+    """
+    system = platform.system()
+    if system == "Darwin":
+        try:
+            proc = subprocess.run(
+                ["networksetup", "-getairportpower", "en0"],
+                capture_output=True, text=True, timeout=3,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return True
+        return proc.returncode == 0 and "Off" not in proc.stdout
+    if system == "Linux":
+        try:
+            proc = subprocess.run(
+                ["iw", "dev"], capture_output=True, text=True, timeout=3,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return True
+        return proc.returncode == 0 and "Interface " in proc.stdout
+    if system == "Windows":
+        try:
+            proc = subprocess.run(
+                ["netsh", "wlan", "show", "interfaces"],
+                capture_output=True, text=True, timeout=3,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return True
+        out = proc.stdout.lower()
+        return proc.returncode == 0 and "state" in out and "disconnected" not in out
+    return False
 
 
 def _to_int(s: str | None) -> int | None:

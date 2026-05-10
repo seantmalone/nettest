@@ -56,7 +56,10 @@ class BandwidthProbe(ProbeTimings):
 
 class MtuProbe(ProbeTimings):
     interval_ms: PositiveInt = 300_000
-    timeout_ms: PositiveInt = 2000
+    # Budget = (sizes × per-iter ping wait) + slack. With 6 default sizes
+    # and a 1s per-iter cap inside _ping_df, we need at least 6s total
+    # before Probe.run() cancels with "timeout".
+    timeout_ms: PositiveInt = 6000
     sizes: list[int] = Field(default_factory=lambda: [1500, 1472, 1400, 1200, 1000, 576])
 
 
@@ -91,7 +94,13 @@ class TcpTarget(_Strict):
 
 
 class StreamTarget(_Strict):
-    url: str = "https://speed.cloudflare.com/__down?bytes=104857600"
+    # Default to a non-rate-limited speed-test endpoint. Cloudflare's
+    # speed.cloudflare.com/__down rate-limits non-browser User-Agents and
+    # intermittently 403s repeated requests from the same IP, which makes
+    # the stream probe show 100% loss in legitimate runs. Linode's
+    # speedtest endpoints don't gate on UA. Override in config if a
+    # different geographically-closer endpoint is preferred.
+    url: str = "https://speedtest.london.linode.com/100MB-london.bin"
     duration_s: PositiveInt = 60
 
 

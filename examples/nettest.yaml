@@ -19,7 +19,7 @@ targets:
     - https://www.cloudflare.com
   tcp: []
   stream:
-    url: https://speed.cloudflare.com/__down?bytes=104857600
+    url: https://speedtest.london.linode.com/100MB-london.bin
     duration_s: 60
 
 probes:

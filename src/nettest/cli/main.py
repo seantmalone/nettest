@@ -172,6 +172,19 @@ def build_runtime(argv: list[str], data_dir: Path | None = None) -> Runtime:
     scheduler = Scheduler(bus=bus, hostname=hostname)
     probes = build_probes(cfg, hostname=hostname, filter_names=args.probes)
     rt_targets = resolve_targets(cfg)
+    # Skip the wifi probe when Wi-Fi is clearly off/absent. Otherwise it
+    # generates failure results every cycle (1Hz default), inflating loss
+    # metrics and triggering correlated_loss noise. The user can still
+    # force it with --probes wifi.
+    from nettest.probes.wifi import is_wifi_likely_available
+    skip_wifi = (
+        "wifi" in probes
+        and (args.probes is None or "wifi" not in args.probes)
+        and not is_wifi_likely_available()
+    )
+    if skip_wifi:
+        print("note: skipping wifi probe (Wi-Fi appears to be off)", file=sys.stderr)
+        probes.pop("wifi", None)
     for name, probe in probes.items():
         targets: list[Target] = getattr(rt_targets, name, [])
         if targets:
