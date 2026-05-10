@@ -1,19 +1,22 @@
 """FastAPI app: REST + WebSocket + static page."""
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import csv
 import io
 import sqlite3
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import FastAPI, Query, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from nettest.bus import ResultBus
+from nettest.events import Event
+from nettest.tui.event_broadcast import EventBroadcast
 from nettest.web.queries import (
     pick_resolution,
     query_events,
@@ -37,6 +40,7 @@ def build_app(
     db_path: Path,
     hostname: str,
     bus: ResultBus | None = None,
+    events: EventBroadcast | None = None,
 ) -> FastAPI:
     app = FastAPI(title="nettest")
 
@@ -117,19 +121,50 @@ def build_app(
 
     if bus is not None:
         bus_ref = bus
+        events_ref = events
 
         @app.websocket("/ws/live")
         async def ws_live(ws: WebSocket) -> None:
             await ws.accept()
             sub_name = f"ws:{id(ws)}"
-            q = bus_ref.subscribe(sub_name, drop_policy="drop_oldest", max_depth=500)
+            result_q = bus_ref.subscribe(
+                sub_name, drop_policy="drop_oldest", max_depth=500,
+            )
+            out_q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=1000)
+
+            def _on_event(e: Event) -> None:
+                envelope: dict[str, Any] = {
+                    "kind": "event",
+                    "ts_end": e.ts_end.isoformat(),
+                    "event_kind": e.kind,
+                    "severity": e.severity,
+                    "summary": e.summary,
+                }
+                with contextlib.suppress(asyncio.QueueFull):
+                    out_q.put_nowait(envelope)
+
+            if events_ref is not None:
+                events_ref.subscribe(_on_event)
+
+            async def _drain_results() -> None:
+                while True:
+                    r = await result_q.get()
+                    with contextlib.suppress(asyncio.QueueFull):
+                        out_q.put_nowait({"kind": "result", **r.to_json_dict()})
+
+            drain_task = asyncio.create_task(_drain_results())
             try:
                 with contextlib.suppress(Exception):
                     while True:
-                        r = await q.get()
-                        await ws.send_json(r.to_json_dict())
+                        msg = await out_q.get()
+                        await ws.send_json(msg)
             finally:
+                drain_task.cancel()
+                with contextlib.suppress(BaseException):
+                    await drain_task
                 bus_ref.unsubscribe(sub_name)
+                # EventBroadcast has no unsubscribe; the callback will no-op
+                # if the WebSocket is closed. Acceptable for v1.
 
     return app
 

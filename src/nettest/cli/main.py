@@ -75,7 +75,12 @@ class Runtime:
         web_server: uvicorn.Server | None = None
         if not self.args.no_web and not self.args.quiet:
             from nettest.web.app import build_app
-            app = build_app(db_path=self.db_path, hostname=self.hostname, bus=self.bus)
+            app = build_app(
+                db_path=self.db_path,
+                hostname=self.hostname,
+                bus=self.bus,
+                events=self.events,
+            )
             uv_cfg = uvicorn.Config(
                 app,
                 host=self.args.bind or self.cfg.ui.web.bind,

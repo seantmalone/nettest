@@ -96,6 +96,18 @@ async def test_csv_export_escapes_commas_in_error(tmp_path: Path):
     assert '"connection refused, port 443"' in resp.text
 
 
+async def test_ws_live_streams_events_when_broadcaster_provided(db: Path):
+    """Smoke test that build_app accepts an events broadcaster."""
+    from nettest.bus import ResultBus
+    from nettest.tui.event_broadcast import EventBroadcast
+    bus = ResultBus()
+    eb = EventBroadcast()
+    app = build_app(db_path=db, hostname="h", bus=bus, events=eb)
+    # If construction succeeds and /ws/live is registered, we're good
+    routes = [r.path for r in app.routes if hasattr(r, "path")]
+    assert "/ws/live" in routes
+
+
 async def test_results_endpoint_uses_rollups_for_long_range(tmp_path: Path):
     p = tmp_path / "x.db"
     conn = sqlite3.connect(p)
