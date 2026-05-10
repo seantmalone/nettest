@@ -8,11 +8,9 @@ Runs a suite of probes — ping, DNS (cached + uncached), HTTP with full timing 
 
 ## Install
 
-```bash
-pip install nettest
-```
+Currently install from source: `pip install -e ".[dev]"` from a clone. PyPI release is planned.
 
-Requires Python 3.11+. Pre-built binaries for macOS and Windows are available on the [releases page](https://github.com/seantmalone/nettest/releases).
+Requires Python 3.11+. Pre-built binaries (planned): a PyInstaller spec is in `packaging/` and the GitHub Actions workflow can be extended to attach binaries to releases.
 
 ## Quick start
 
@@ -21,7 +19,7 @@ nettest                          # run with smart defaults; opens TUI + dashboar
 nettest --snapshot               # 30-second sample, prints summary, exits
 nettest --duration 1h            # run for an hour then stop
 nettest --no-tui                 # headless (web dashboard only)
-nettest --replay results.db      # explore yesterday's data
+nettest --replay results.db      # v1 limitation: opens an empty TUI; use the web dashboard's REST endpoints (read directly from results.db) for now
 nettest --bind 127.0.0.1         # restrict web UI to localhost
 ```
 
@@ -41,8 +39,9 @@ Run `nettest` on each box. Each writes its own data under `./data/<hostname>/` a
 ./data/<hostname>/
   results.db           # SQLite with raw results, events, rollups
   YYYY-MM-DD.jsonl     # one line per probe result, daily file
-  nettest.log          # nettest's own diagnostic log
 ```
+
+Diagnostic logs go to stderr; explicit file logging (`nettest.log`) is planned.
 
 Default retention: raw results 7 days, per-minute rollups 90 days, per-hour rollups 1 year.
 
