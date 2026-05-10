@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 from nettest.storage.rollups import (
@@ -49,7 +50,8 @@ def test_rollup_1m_aggregates_per_minute(tmp_path: Path):
 def test_rollup_1h_aggregates_from_1m(tmp_path: Path):
     conn = sqlite3.connect(":memory:")
     init_schema(conn)
-    hour_start = 1_715_366_400_000
+    hour_start = int(datetime(2026, 5, 10, 18, 0, tzinfo=UTC).timestamp() * 1000)
+    assert hour_start % 3_600_000 == 0  # confirm hour-aligned
     for m in range(60):
         conn.execute(
             "INSERT INTO rollups_1m "
@@ -62,10 +64,13 @@ def test_rollup_1h_aggregates_from_1m(tmp_path: Path):
 
     compute_rollups_1h(conn, since_ms=hour_start, now_ms=hour_start + 3_600_000)
 
-    row = conn.execute("SELECT count, ok_count, loss_pct FROM rollups_1h").fetchone()
-    assert row[0] == 6000
-    assert row[1] == 5940
-    assert abs(row[2] - 1.0) < 0.001
+    row = conn.execute(
+        "SELECT ts_bucket, count, ok_count, loss_pct FROM rollups_1h"
+    ).fetchone()
+    assert row[0] == hour_start  # bucket key is hour boundary
+    assert row[1] == 6000
+    assert row[2] == 5940
+    assert abs(row[3] - 1.0) < 0.001
 
 
 def test_latest_rollup_bucket_returns_none_when_empty():

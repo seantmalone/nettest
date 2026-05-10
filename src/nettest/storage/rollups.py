@@ -61,22 +61,26 @@ def compute_rollups_1m(conn: sqlite3.Connection, since_ms: int, now_ms: int) -> 
 
 
 def compute_rollups_1h(conn: sqlite3.Connection, since_ms: int, now_ms: int) -> None:
-    if now_ms <= since_ms:
+    bucket_start = (since_ms // MS_PER_HOUR) * MS_PER_HOUR
+    bucket_end = (now_ms // MS_PER_HOUR) * MS_PER_HOUR
+    if bucket_end <= bucket_start:
         return
     conn.execute("BEGIN")
     conn.execute(
         """
         INSERT OR REPLACE INTO rollups_1h
+        (ts_bucket, probe, target, count, ok_count, loss_pct,
+         p50_ms, p95_ms, p99_ms, max_ms)
         SELECT
-            ? AS hbucket, probe, target,
+            (ts_bucket / ?) * ? AS hbucket, probe, target,
             SUM(count), SUM(ok_count),
             (1.0 - SUM(ok_count) * 1.0 / SUM(count)) * 100.0 AS loss_pct,
             MAX(p50_ms), MAX(p95_ms), MAX(p99_ms), MAX(max_ms)
         FROM rollups_1m
         WHERE ts_bucket >= ? AND ts_bucket < ?
-        GROUP BY probe, target
+        GROUP BY hbucket, probe, target
         """,
-        (since_ms, since_ms, now_ms),
+        (MS_PER_HOUR, MS_PER_HOUR, bucket_start, bucket_end),
     )
     conn.execute("COMMIT")
 
