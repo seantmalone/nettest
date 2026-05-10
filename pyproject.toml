@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nettest"
+version = "0.1.0"
+description = "High-frequency network diagnostic utility with TUI and web dashboard"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Sean Malone", email = "seantmalone@gmail.com" }]
+dependencies = [
+    "httpx>=0.27",
+    "dnspython>=2.6",
+    "icmplib>=3.0",
+    "scapy>=2.5",
+    "textual>=0.79",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "pydantic>=2.8",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "respx>=0.21",
+    "dnslib>=0.9",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pyinstaller>=6.10",
+]
+
+[project.scripts]
+nettest = "nettest.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+nettest = ["py.typed", "web/static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: integration tests that hit local services",
+    "wifi: tests that require a wireless interface",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/nettest"]
