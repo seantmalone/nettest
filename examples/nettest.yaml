@@ -1,0 +1,56 @@
+# nettest configuration — every key shown with its default value.
+# Delete keys you don't need to override.
+
+targets:
+  ping:
+    - auto:gateway
+    - 1.1.1.1
+    - 8.8.8.8
+    - 9.9.9.9
+  dns:
+    resolvers:
+      - auto:system
+      - 1.1.1.1
+      - 8.8.8.8
+    cached_query: google.com
+    uncached_domain: dnscheck.example.com
+  http:
+    - https://www.google.com
+    - https://www.cloudflare.com
+  tcp: []
+  stream:
+    url: https://speed.cloudflare.com/__down?bytes=104857600
+    duration_s: 60
+
+probes:
+  ping:         { interval_ms: 250,    timeout_ms: 1000, packet_size: 56 }
+  dns_cached:   { interval_ms: 250,    timeout_ms: 2000 }
+  dns_uncached: { interval_ms: 250,    timeout_ms: 2000 }
+  http:         { interval_ms: 2000,   timeout_ms: 5000 }
+  tcp_connect:  { interval_ms: 2000,   timeout_ms: 3000 }
+  traceroute:   { interval_ms: 60000,  timeout_ms: 5000, max_hops: 30 }
+  stream:       { restart_interval_ms: 60000, stall_threshold_ms: 200 }
+  bandwidth:    { interval_ms: 300000, timeout_ms: 30000 }
+  mtu:          { interval_ms: 300000, timeout_ms: 2000, sizes: [1500, 1472, 1400, 1200, 1000, 576] }
+  wifi:         { interval_ms: 1000,   timeout_ms: 1000, enabled: true }
+
+patterns:
+  micro_outage:    { min_consecutive_fails: 3, window_ms: 2000 }
+  correlated_loss: { min_targets: 3, window_ms: 1500 }
+  latency_spike:   { p95_multiplier: 5.0, min_samples: 30 }
+  dns_only_fail:   { min_dns_fails: 2, max_other_fails: 0, window_ms: 2000 }
+  stream_stall:    { min_stalls_per_minute: 2 }
+
+ui:
+  tui: { enabled: true, theme: dark, beep_on: none, no_color: false, ascii: false }
+  web: { enabled: true, bind: 0.0.0.0, port: 8080 }
+
+storage:
+  data_dir: ./data
+  retention:
+    raw_results_days: 7
+    rollups_1m_days: 90
+    rollups_1h_days: 365
+    events_days: -1
+  jsonl: { enabled: true, rotate: daily }
+  sqlite: { enabled: true, file: results.db }
