@@ -52,3 +52,38 @@ def test_config_rejects_unknown_top_level_key(tmp_path: Path):
     cfg_file.write_text("totally_made_up: 1\n")
     with pytest.raises(ValueError):
         load_config(config_path=cfg_file)
+
+
+def test_duration_parser_accepts_int_as_ms(tmp_path: Path):
+    f = tmp_path / "nettest.yaml"
+    f.write_text("probes:\n  ping:\n    interval_ms: 500\n")
+    cfg = load_config(config_path=f)
+    assert cfg.probes.ping.interval_ms == 500
+
+
+def test_duration_parser_accepts_seconds(tmp_path: Path):
+    f = tmp_path / "nettest.yaml"
+    f.write_text("probes:\n  ping:\n    interval_ms: 5s\n")
+    cfg = load_config(config_path=f)
+    assert cfg.probes.ping.interval_ms == 5000
+
+
+def test_duration_parser_accepts_minutes(tmp_path: Path):
+    f = tmp_path / "nettest.yaml"
+    f.write_text("probes:\n  traceroute:\n    interval_ms: 5m\n")
+    cfg = load_config(config_path=f)
+    assert cfg.probes.traceroute.interval_ms == 5 * 60_000
+
+
+def test_duration_parser_accepts_ms_suffix(tmp_path: Path):
+    f = tmp_path / "nettest.yaml"
+    f.write_text("probes:\n  ping:\n    interval_ms: 250ms\n")
+    cfg = load_config(config_path=f)
+    assert cfg.probes.ping.interval_ms == 250
+
+
+def test_duration_parser_rejects_garbage(tmp_path: Path):
+    f = tmp_path / "nettest.yaml"
+    f.write_text("probes:\n  ping:\n    interval_ms: hello\n")
+    with pytest.raises(ValueError):
+        load_config(config_path=f)

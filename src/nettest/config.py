@@ -1,11 +1,40 @@
 """Pydantic config models with smart defaults + YAML loader."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PositiveInt
+
+_DURATION_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*(ms|s|m|h)?\s*$", re.IGNORECASE)
+_DURATION_MULT_MS = {"ms": 1, "s": 1000, "m": 60_000, "h": 3_600_000}
+
+
+def _parse_duration_ms(v: Any) -> int:
+    """Accept int (interpreted as ms, for backwards compat) or human duration string.
+
+    Examples: 250 -> 250, "250ms" -> 250, "30s" -> 30000, "5m" -> 300000, "1.5s" -> 1500.
+    """
+    if isinstance(v, bool):
+        # bool is a subclass of int; reject explicitly
+        raise TypeError("duration cannot be bool")
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v)
+    if isinstance(v, str):
+        m = _DURATION_RE.match(v)
+        if not m:
+            raise ValueError(f"invalid duration: {v!r}")
+        n = float(m.group(1))
+        unit = (m.group(2) or "ms").lower()
+        return int(n * _DURATION_MULT_MS[unit])
+    raise TypeError(f"duration must be int or str, got {type(v).__name__}")
+
+
+PositiveDurationMs = Annotated[int, BeforeValidator(_parse_duration_ms), Field(gt=0)]
 
 
 class _Strict(BaseModel):
@@ -13,61 +42,61 @@ class _Strict(BaseModel):
 
 
 class ProbeTimings(_Strict):
-    interval_ms: PositiveInt
-    timeout_ms: PositiveInt = 1000
+    interval_ms: PositiveDurationMs
+    timeout_ms: PositiveDurationMs = 1000
 
 
 class PingProbe(ProbeTimings):
-    interval_ms: PositiveInt = 250
-    timeout_ms: PositiveInt = 1000
+    interval_ms: PositiveDurationMs = 250
+    timeout_ms: PositiveDurationMs = 1000
     packet_size: PositiveInt = 56
 
 
 class DnsProbe(ProbeTimings):
-    interval_ms: PositiveInt = 250
-    timeout_ms: PositiveInt = 2000
+    interval_ms: PositiveDurationMs = 250
+    timeout_ms: PositiveDurationMs = 2000
 
 
 class HttpProbe(ProbeTimings):
-    interval_ms: PositiveInt = 2000
-    timeout_ms: PositiveInt = 5000
+    interval_ms: PositiveDurationMs = 2000
+    timeout_ms: PositiveDurationMs = 5000
 
 
 class TcpConnectProbe(ProbeTimings):
-    interval_ms: PositiveInt = 2000
-    timeout_ms: PositiveInt = 3000
+    interval_ms: PositiveDurationMs = 2000
+    timeout_ms: PositiveDurationMs = 3000
 
 
 class TracerouteProbe(ProbeTimings):
     # Real-world traceroute over 30 hops with `-q 3 -w 1` averages ~10-30s.
     # 45s budget gives headroom without hanging too long when a hop drops.
-    interval_ms: PositiveInt = 60_000
-    timeout_ms: PositiveInt = 45_000
+    interval_ms: PositiveDurationMs = 60_000
+    timeout_ms: PositiveDurationMs = 45_000
     max_hops: PositiveInt = 30
 
 
 class StreamProbe(_Strict):
-    restart_interval_ms: PositiveInt = 60_000
-    stall_threshold_ms: PositiveInt = 200
+    restart_interval_ms: PositiveDurationMs = 60_000
+    stall_threshold_ms: PositiveDurationMs = 200
 
 
 class BandwidthProbe(ProbeTimings):
-    interval_ms: PositiveInt = 300_000
-    timeout_ms: PositiveInt = 30_000
+    interval_ms: PositiveDurationMs = 300_000
+    timeout_ms: PositiveDurationMs = 30_000
 
 
 class MtuProbe(ProbeTimings):
-    interval_ms: PositiveInt = 300_000
+    interval_ms: PositiveDurationMs = 300_000
     # Budget = (sizes × per-iter ping wait) + slack. With 6 default sizes
     # and a 1s per-iter cap inside _ping_df, we need at least 6s total
     # before Probe.run() cancels with "timeout".
-    timeout_ms: PositiveInt = 6000
+    timeout_ms: PositiveDurationMs = 6000
     sizes: list[int] = Field(default_factory=lambda: [1500, 1472, 1400, 1200, 1000, 576])
 
 
 class WifiProbe(ProbeTimings):
-    interval_ms: PositiveInt = 1000
-    timeout_ms: PositiveInt = 1000
+    interval_ms: PositiveDurationMs = 1000
+    timeout_ms: PositiveDurationMs = 1000
     enabled: bool = True
 
 
@@ -120,12 +149,12 @@ class Targets(_Strict):
 
 class MicroOutage(_Strict):
     min_consecutive_fails: PositiveInt = 3
-    window_ms: PositiveInt = 2000
+    window_ms: PositiveDurationMs = 2000
 
 
 class CorrelatedLoss(_Strict):
     min_targets: PositiveInt = 3
-    window_ms: PositiveInt = 1500
+    window_ms: PositiveDurationMs = 1500
 
 
 class LatencySpike(_Strict):
@@ -136,7 +165,7 @@ class LatencySpike(_Strict):
 class DnsOnlyFail(_Strict):
     min_dns_fails: PositiveInt = 2
     max_other_fails: int = 0
-    window_ms: PositiveInt = 2000
+    window_ms: PositiveDurationMs = 2000
 
 
 class StreamStall(_Strict):
@@ -160,7 +189,7 @@ class Patterns(_Strict):
     stream_stall: StreamStall = Field(default_factory=StreamStall)
     wifi_drop: WifiDrop = Field(default_factory=WifiDrop)
     mtu_change: MtuChange = Field(default_factory=MtuChange)
-    cooldown_ms: PositiveInt = 5000  # min gap between same-scope event emissions
+    cooldown_ms: PositiveDurationMs = 5000  # min gap between same-scope event emissions
 
 
 class TuiUi(_Strict):

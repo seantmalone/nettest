@@ -22,24 +22,29 @@ targets:
     url: https://speedtest.london.linode.com/100MB-london.bin
     duration_s: 10
 
+# interval_ms / timeout_ms / window_ms / cooldown_ms etc. accept either an
+# integer (always interpreted as milliseconds, for backwards compat) or a
+# human-readable duration string: "250ms", "30s", "5m", "1h". Both forms
+# below are valid; the string form is recommended for anything > a second.
 probes:
-  ping:         { interval_ms: 250,    timeout_ms: 1000, packet_size: 56 }
-  dns_cached:   { interval_ms: 250,    timeout_ms: 2000 }
-  dns_uncached: { interval_ms: 250,    timeout_ms: 2000 }
-  http:         { interval_ms: 2000,   timeout_ms: 5000 }
-  tcp_connect:  { interval_ms: 2000,   timeout_ms: 3000 }
-  traceroute:   { interval_ms: 60000,  timeout_ms: 45000, max_hops: 30 }
-  stream:       { restart_interval_ms: 60000, stall_threshold_ms: 200 }
-  bandwidth:    { interval_ms: 300000, timeout_ms: 30000 }
-  mtu:          { interval_ms: 300000, timeout_ms: 2000, sizes: [1500, 1472, 1400, 1200, 1000, 576] }
-  wifi:         { interval_ms: 1000,   timeout_ms: 1000, enabled: true }
+  ping:         { interval_ms: 250ms,  timeout_ms: 1s,   packet_size: 56 }
+  dns_cached:   { interval_ms: 250ms,  timeout_ms: 2s }
+  dns_uncached: { interval_ms: 250ms,  timeout_ms: 2s }
+  http:         { interval_ms: 2s,     timeout_ms: 5s }
+  tcp_connect:  { interval_ms: 2s,     timeout_ms: 3s }
+  traceroute:   { interval_ms: 60s,    timeout_ms: 45s,  max_hops: 30 }
+  stream:       { restart_interval_ms: 60s, stall_threshold_ms: 200ms }
+  bandwidth:    { interval_ms: 5m,     timeout_ms: 30s }
+  mtu:          { interval_ms: 5m,     timeout_ms: 6s,   sizes: [1500, 1472, 1400, 1200, 1000, 576] }
+  wifi:         { interval_ms: 1s,     timeout_ms: 1s,   enabled: true }
 
 patterns:
-  micro_outage:    { min_consecutive_fails: 3, window_ms: 2000 }
-  correlated_loss: { min_targets: 3, window_ms: 1500 }
+  micro_outage:    { min_consecutive_fails: 3, window_ms: 2s }
+  correlated_loss: { min_targets: 3, window_ms: 1500ms }
   latency_spike:   { p95_multiplier: 5.0, min_samples: 30 }
-  dns_only_fail:   { min_dns_fails: 2, max_other_fails: 0, window_ms: 2000 }
+  dns_only_fail:   { min_dns_fails: 2, max_other_fails: 0, window_ms: 2s }
   stream_stall:    { min_stalls_per_minute: 2 }
+  cooldown_ms:     5s
 
 ui:
   tui: { enabled: true, theme: dark, beep_on: none, no_color: false, ascii: false }
