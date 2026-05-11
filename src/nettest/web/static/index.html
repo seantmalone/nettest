@@ -28,28 +28,30 @@
   <div id="status-row" aria-live="polite" aria-label="Probe status"></div>
   <main>
     <section id="charts">
-      <div class="chart-card" id="latency-card">
-        <div class="chart-header"><span class="chart-title">Latency over time</span></div>
-        <div id="latency" class="chart-plot" role="img" aria-label="Latency over time"></div>
-      </div>
-      <div class="chart-card" id="loss-card">
-        <div class="chart-header"><span class="chart-title">Packet loss % (target × time)</span></div>
-        <div id="loss-heatmap" class="chart-plot" role="img" aria-label="Packet loss heatmap by target and time"></div>
-      </div>
-      <div class="chart-card" id="http-card">
-        <div class="chart-header"><span class="chart-title">HTTP timing breakdown</span></div>
-        <div id="http-timing" class="chart-plot" role="img" aria-label="HTTP timing breakdown"></div>
-      </div>
-      <div class="chart-card" id="wifi-card">
-        <div class="chart-header"><span class="chart-title">Wi-Fi signal (dBm)</span></div>
-        <div class="chart-wrap">
-          <div id="wifi-placeholder" class="chart-placeholder">Collecting Wi-Fi data&hellip;</div>
-          <div id="wifi" class="chart-plot" role="img" aria-label="Wi-Fi signal strength" hidden></div>
+      <div id="chart-grid">
+        <div class="chart-card" id="latency-card">
+          <div class="chart-header"><span class="chart-title">Latency over time</span></div>
+          <div id="latency" class="chart-plot" role="img" aria-label="Latency over time"></div>
         </div>
-      </div>
-      <div class="chart-card" id="stream-card" hidden>
-        <div class="chart-header"><span class="chart-title">Streaming throughput (Mbps)</span></div>
-        <div id="stream-throughput" class="chart-plot" role="img" aria-label="Streaming throughput"></div>
+        <div class="chart-card" id="loss-card">
+          <div class="chart-header"><span class="chart-title">Packet loss % (target × time)</span></div>
+          <div id="loss-heatmap" class="chart-plot" role="img" aria-label="Packet loss heatmap by target and time"></div>
+        </div>
+        <div class="chart-card" id="http-card">
+          <div class="chart-header"><span class="chart-title" id="http-title">HTTP timing breakdown</span></div>
+          <div id="http-timing" class="chart-plot" role="img" aria-label="HTTP timing breakdown"></div>
+        </div>
+        <div class="chart-card" id="wifi-card">
+          <div class="chart-header"><span class="chart-title">Wi-Fi signal (dBm)</span></div>
+          <div class="chart-wrap">
+            <div id="wifi-placeholder" class="chart-placeholder">Collecting Wi-Fi data&hellip;</div>
+            <div id="wifi" class="chart-plot" role="img" aria-label="Wi-Fi signal strength" hidden></div>
+          </div>
+        </div>
+        <div class="chart-card" id="stream-card" hidden>
+          <div class="chart-header"><span class="chart-title">Streaming throughput (Mbps)</span></div>
+          <div id="stream-throughput" class="chart-plot" role="img" aria-label="Streaming throughput"></div>
+        </div>
       </div>
     </section>
     <aside id="events-panel" aria-label="Recent events">
