@@ -22,8 +22,12 @@ class BandwidthProbe(Probe):
             raise ValueError("bandwidth requires Target(kind='url')")
         ts = datetime.now(UTC)
         t0 = time.perf_counter()
+        # follow_redirects=True — bandwidth measures download throughput, so
+        # a 3xx with empty body (e.g., www.github.com → github.com) should
+        # transparently redirect rather than count as a 0-byte fetch failure.
         async with httpx.AsyncClient(
             timeout=self.ctx.timeout_ms / 1000, headers=_HEADERS,
+            follow_redirects=True,
         ) as client:
             try:
                 resp = await client.get(target.host)

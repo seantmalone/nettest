@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import platform
 import re
 import subprocess
@@ -11,6 +12,14 @@ from typing import Any
 
 from nettest.probes.base import Probe, ProbeContext
 from nettest.types import Result, Target
+
+_AIRPORT_PATH = (
+    "/System/Library/PrivateFrameworks/Apple80211.framework/"
+    "Versions/Current/Resources/airport"
+)
+# macOS 14+ removed the airport binary; skip the call entirely instead of
+# spawning a subprocess that's guaranteed to ENOENT every probe cycle.
+_AIRPORT_EXISTS = os.path.exists(_AIRPORT_PATH)
 
 
 def is_wifi_likely_available() -> bool:
@@ -219,15 +228,11 @@ class WifiProbe(Probe):
         sysname = platform.system()
         t0 = time.perf_counter()
         if sysname == "Darwin":
-            cmd = [
-                "/System/Library/PrivateFrameworks/Apple80211.framework/"
-                "Versions/Current/Resources/airport",
-                "-I",
-            ]
-            rc, stdout = await _run_cmd(cmd)
             info: dict[str, Any] = {}
-            if rc == 0:
-                info = parse_airport_output(stdout)
+            if _AIRPORT_EXISTS:
+                rc, stdout = await _run_cmd([_AIRPORT_PATH, "-I"])
+                if rc == 0:
+                    info = parse_airport_output(stdout)
             # macOS Sonoma 14+ removed airport; fall back to system_profiler.
             # `-detailLevel basic` omits the "Current Network Information"
             # section, so use the default (medium) detail level which always

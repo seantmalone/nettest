@@ -91,9 +91,14 @@ class TracerouteProbe(Probe):
             ]
             parser = parse_tracert_output
         else:
+            # `-w` is per-probe wait, NOT a total budget. Setting it to the
+            # full timeout_ms means a single dropped hop will pin the
+            # process for `timeout_s` per probe (× 3 probes × 30 hops),
+            # which guarantees the outer Probe.run() cancellation fires
+            # before traceroute can finish. Keep it small; the outer
+            # wrapper governs total runtime.
             cmd = [
-                "traceroute", "-n", "-q", "3",
-                "-w", str(max(1, self.ctx.timeout_ms // 1000)),
+                "traceroute", "-n", "-q", "3", "-w", "2",
                 "-m", str(self.max_hops), target.host,
             ]
             parser = parse_traceroute_output
