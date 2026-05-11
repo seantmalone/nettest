@@ -13,8 +13,6 @@
 <body>
   <header>
     <h1>nettest</h1>
-    <div id="sysinfo-row" class="sysinfo" aria-label="System info">loading system info&hellip;</div>
-    <div id="status-row" aria-live="polite" aria-label="Probe status"></div>
     <nav aria-label="Time range">
       <button data-range="live" class="active" aria-pressed="true">Live</button>
       <button data-range="1h" aria-pressed="false">1h</button>
@@ -22,13 +20,37 @@
       <button data-range="7d" aria-pressed="false">7d</button>
     </nav>
   </header>
+  <div id="sysinfo-row" class="sysinfo" aria-label="System info">loading system info&hellip;</div>
+  <div id="health-bar" role="status" aria-live="polite" data-state="ok">
+    <span class="health-dot" aria-hidden="true">●</span>
+    <span class="health-text">Initializing&hellip;</span>
+  </div>
+  <div id="status-row" aria-live="polite" aria-label="Probe status"></div>
   <main>
     <section id="charts">
-      <div id="latency" role="img" aria-label="Latency over time"></div>
-      <div id="loss-heatmap" role="img" aria-label="Packet loss heatmap by target and time"></div>
-      <div id="http-timing" role="img" aria-label="HTTP timing breakdown"></div>
-      <div id="wifi" role="img" aria-label="Wi-Fi signal strength"></div>
-      <div id="stream-throughput" role="img" aria-label="Streaming throughput"></div>
+      <div class="chart-card" id="latency-card">
+        <div class="chart-header"><span class="chart-title">Latency over time</span></div>
+        <div id="latency" class="chart-plot" role="img" aria-label="Latency over time"></div>
+      </div>
+      <div class="chart-card" id="loss-card">
+        <div class="chart-header"><span class="chart-title">Packet loss % (target × time)</span></div>
+        <div id="loss-heatmap" class="chart-plot" role="img" aria-label="Packet loss heatmap by target and time"></div>
+      </div>
+      <div class="chart-card" id="http-card">
+        <div class="chart-header"><span class="chart-title">HTTP timing breakdown</span></div>
+        <div id="http-timing" class="chart-plot" role="img" aria-label="HTTP timing breakdown"></div>
+      </div>
+      <div class="chart-card" id="wifi-card">
+        <div class="chart-header"><span class="chart-title">Wi-Fi signal (dBm)</span></div>
+        <div class="chart-wrap">
+          <div id="wifi-placeholder" class="chart-placeholder">Collecting Wi-Fi data&hellip;</div>
+          <div id="wifi" class="chart-plot" role="img" aria-label="Wi-Fi signal strength" hidden></div>
+        </div>
+      </div>
+      <div class="chart-card" id="stream-card" hidden>
+        <div class="chart-header"><span class="chart-title">Streaming throughput (Mbps)</span></div>
+        <div id="stream-throughput" class="chart-plot" role="img" aria-label="Streaming throughput"></div>
+      </div>
     </section>
     <aside id="events-panel" aria-label="Recent events">
       <h2>Events</h2>
@@ -36,9 +58,10 @@
     </aside>
   </main>
   <footer>
-    <span id="ws-status">connecting&hellip;</span>
-    <a id="export-csv" href="/api/export.csv">export CSV</a>
+    <a id="export-csv" href="/api/export.csv">Export CSV</a>
     <span id="export-hint" aria-hidden="true"></span>
+    <span class="footer-spacer"></span>
+    <span id="ws-status" class="ws-pill">connecting&hellip;</span>
   </footer>
 </body>
 </html>
