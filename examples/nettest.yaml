@@ -12,11 +12,21 @@ targets:
       - auto:system
       - 1.1.1.1
       - 8.8.8.8
-    cached_query: google.com
+    # cached_query accepts either a single domain string or a list of domains.
+    # Each domain is queried against every resolver above.
+    cached_query:
+      - google.com
+      - cloudflare.com
+      - github.com
+      - wikipedia.org
+      - apple.com
     uncached_domain: dnscheck.example.com
   http:
     - https://www.google.com
     - https://www.cloudflare.com
+    - https://github.com           # www.github.com 301-redirects; canonical 200s
+    - https://www.wikipedia.org
+    - https://www.apple.com
   tcp: []
   stream:
     url: https://speedtest.london.linode.com/100MB-london.bin
@@ -36,7 +46,7 @@ probes:
   stream:       { restart_interval_ms: 60s, stall_threshold_ms: 200ms }
   bandwidth:    { interval_ms: 5m,     timeout_ms: 30s }
   mtu:          { interval_ms: 5m,     timeout_ms: 6s,   sizes: [1500, 1472, 1400, 1200, 1000, 576] }
-  wifi:         { interval_ms: 1s,     timeout_ms: 1s,   enabled: true }
+  wifi:         { interval_ms: 5s,     timeout_ms: 5s,   enabled: true }
 
 patterns:
   micro_outage:    { min_consecutive_fails: 3, window_ms: 2s }

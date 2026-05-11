@@ -115,7 +115,8 @@ def resolve_targets(cfg: Config) -> ResolvedTargets:
 
     resolvers = _resolve_dns_resolvers(cfg.targets.dns.resolvers)
     for r in resolvers:
-        rt.dns_cached.append(Target(kind="dns", host=cfg.targets.dns.cached_query, resolver=r))
+        for domain in cfg.targets.dns.cached_query:
+            rt.dns_cached.append(Target(kind="dns", host=domain, resolver=r))
         # DnsUncachedProbe generates a fresh subdomain per call. The Target
         # stores the base domain as a placeholder (used in labels/logs only).
         rt.dns_uncached.append(Target(

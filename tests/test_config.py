@@ -82,6 +82,24 @@ def test_duration_parser_accepts_ms_suffix(tmp_path: Path):
     assert cfg.probes.ping.interval_ms == 250
 
 
+def test_cached_query_defaults_to_five_domains():
+    cfg = Config()
+    assert len(cfg.targets.dns.cached_query) == 5
+    assert "google.com" in cfg.targets.dns.cached_query
+
+
+def test_cached_query_accepts_single_string_for_backcompat(tmp_path: Path):
+    f = tmp_path / "nettest.yaml"
+    f.write_text("targets:\n  dns:\n    cached_query: example.com\n")
+    cfg = load_config(config_path=f)
+    assert cfg.targets.dns.cached_query == ["example.com"]
+
+
+def test_http_defaults_to_five_urls():
+    cfg = Config()
+    assert len(cfg.targets.http) == 5
+
+
 def test_duration_parser_rejects_garbage(tmp_path: Path):
     f = tmp_path / "nettest.yaml"
     f.write_text("probes:\n  ping:\n    interval_ms: hello\n")

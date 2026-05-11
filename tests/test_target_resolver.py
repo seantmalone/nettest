@@ -48,7 +48,11 @@ def test_resolve_dns_includes_cached_and_uncached_targets():
     cached_hosts = {(t.resolver, t.host) for t in resolved.dns_cached}
     assert ("8.8.4.4", "google.com") in cached_hosts
     assert ("1.1.1.1", "google.com") in cached_hosts
-    assert all(t.host == "google.com" for t in resolved.dns_cached)
+    # All cached domains are queried against every resolver.
+    cached_domains = {t.host for t in resolved.dns_cached}
+    assert cached_domains == {
+        "google.com", "cloudflare.com", "github.com", "wikipedia.org", "apple.com",
+    }
     assert all(t.host == "dnscheck.example.com" for t in resolved.dns_uncached)
 
 

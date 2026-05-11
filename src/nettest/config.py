@@ -95,8 +95,12 @@ class MtuProbe(ProbeTimings):
 
 
 class WifiProbe(ProbeTimings):
-    interval_ms: PositiveDurationMs = 1000
-    timeout_ms: PositiveDurationMs = 1000
+    # 1s/1s was guaranteed-flaky on macOS 14+: `airport` is gone, and the
+    # `system_profiler SPAirPortDataType` fallback typically takes 2-3s.
+    # Wi-Fi state also doesn't change second-to-second, so the higher
+    # interval keeps the probe useful without thrashing system_profiler.
+    interval_ms: PositiveDurationMs = 5000
+    timeout_ms: PositiveDurationMs = 5000
     enabled: bool = True
 
 
@@ -113,9 +117,27 @@ class Probes(_Strict):
     wifi: WifiProbe = Field(default_factory=WifiProbe)
 
 
+def _coerce_str_list(v: Any) -> list[str]:
+    """Accept a single string or a list of strings; always return a list."""
+    if isinstance(v, str):
+        return [v]
+    return v
+
+
+CachedQueryList = Annotated[list[str], BeforeValidator(_coerce_str_list)]
+
+
 class DnsTargets(_Strict):
     resolvers: list[str] = Field(default_factory=lambda: ["auto:system", "1.1.1.1", "8.8.8.8"])
-    cached_query: str = "google.com"
+    cached_query: CachedQueryList = Field(
+        default_factory=lambda: [
+            "google.com",
+            "cloudflare.com",
+            "github.com",
+            "wikipedia.org",
+            "apple.com",
+        ]
+    )
     uncached_domain: str = "dnscheck.example.com"
 
 
@@ -141,7 +163,13 @@ class Targets(_Strict):
     )
     dns: DnsTargets = Field(default_factory=DnsTargets)
     http: list[str] = Field(default_factory=lambda: [
-        "https://www.google.com", "https://www.cloudflare.com",
+        "https://www.google.com",
+        "https://www.cloudflare.com",
+        # github.com (no www) returns 200 directly; www.github.com 301s,
+        # which the HTTP probe (follow_redirects=False) counts as a fail.
+        "https://github.com",
+        "https://www.wikipedia.org",
+        "https://www.apple.com",
     ])
     tcp: list[TcpTarget] = Field(default_factory=list)
     stream: StreamTarget = Field(default_factory=StreamTarget)
