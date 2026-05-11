@@ -30,6 +30,37 @@ def db(tmp_path: Path) -> Path:
     return p
 
 
+async def test_sysinfo_endpoint_returns_host_only_when_cache_absent(db: Path):
+    app = build_app(db_path=db, hostname="h")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as c:
+        resp = await c.get("/api/sysinfo")
+    assert resp.status_code == 200
+    assert resp.json() == {"host": "h"}
+
+
+async def test_sysinfo_endpoint_returns_snapshot_fields(db: Path):
+    from nettest.sysinfo import SysInfo, SysInfoCache
+
+    cache = SysInfoCache()
+    cache._snapshot = SysInfo(
+        wifi_ssid="MyWiFi", wifi_signal_dbm=-55,
+        default_iface="en0", default_gateway="10.0.0.1",
+        local_ip="10.0.0.42", public_ip="203.0.113.7",
+    )
+    app = build_app(db_path=db, hostname="h", sysinfo=cache)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as c:
+        resp = await c.get("/api/sysinfo")
+    body = resp.json()
+    assert body["host"] == "h"
+    assert body["wifi_ssid"] == "MyWiFi"
+    assert body["default_iface"] == "en0"
+    assert body["default_gateway"] == "10.0.0.1"
+    assert body["local_ip"] == "10.0.0.42"
+    assert body["public_ip"] == "203.0.113.7"
+
+
 async def test_status_endpoint_returns_snapshot(db: Path):
     app = build_app(db_path=db, hostname="h")
     transport = ASGITransport(app=app)

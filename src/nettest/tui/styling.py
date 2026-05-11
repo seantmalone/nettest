@@ -35,6 +35,23 @@ COLORS = {
 _BARS = " ▁▂▃▄▅▆▇█"
 
 
+def format_ms(value: float | None, with_unit: bool = True) -> str:
+    """Format a millisecond duration: one decimal under 10ms, integer otherwise.
+
+    Sub-millisecond values benefit from the decimal place (0.4ms vs 0ms), and
+    the wider the value, the less meaningful trailing precision is. With
+    `with_unit=False` returns the number alone for columns where the unit
+    appears in the header.
+    """
+    if value is None:
+        return "—"
+    if value < 10:
+        s = f"{value:.1f}"
+    else:
+        s = f"{value:.0f}"
+    return f"{s}ms" if with_unit else s
+
+
 def classify_probe(
     *, loss_pct: float, p95_ms: float | None, th: ProbeThreshold,
 ) -> Severity:

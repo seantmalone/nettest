@@ -14,7 +14,7 @@ from textual.widgets import DataTable, Static
 
 from nettest.events import Event
 from nettest.tui.aggregator import TargetAggregator
-from nettest.tui.styling import sparkline_string
+from nettest.tui.styling import format_ms, sparkline_string
 
 
 class DetailScreen(ModalScreen[None]):
@@ -32,10 +32,10 @@ class DetailScreen(ModalScreen[None]):
             f"Probe:    {self._probe}",
             f"Target:   {self._target}",
             f"Samples:  {snap.count}",
-            f"Last:     {snap.last_ms if snap.last_ms is not None else '—'}",
+            f"Last:     {format_ms(snap.last_ms)}",
             (
-                f"p50/p95/p99 ms: {snap.p50_ms if snap.p50_ms is not None else '—'}"
-                f" / {snap.p95_ms if snap.p95_ms is not None else '—'} / —"
+                f"p50/p95/p99 ms: {format_ms(snap.p50_ms, with_unit=False)}"
+                f" / {format_ms(snap.p95_ms, with_unit=False)} / —"
             ),
             f"Loss:     {snap.loss_pct:.2f}%",
             f"Spark:    {sparkline_string(snap.sparkline)}",
@@ -88,8 +88,8 @@ class HistoryScreen(ModalScreen[None]):
             s = agg.snapshot()
             table.add_row(
                 probe, target,
-                "—" if s.p50_ms is None else f"{s.p50_ms:.1f}",
-                "—" if s.p95_ms is None else f"{s.p95_ms:.1f}",
+                format_ms(s.p50_ms, with_unit=False),
+                format_ms(s.p95_ms, with_unit=False),
                 f"{s.loss_pct:.2f}",
                 sparkline_string(s.sparkline),
             )

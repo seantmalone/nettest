@@ -18,10 +18,11 @@ from textual.widgets import DataTable, Footer, Header, Static
 from nettest.bus import ResultBus
 from nettest.config import Config
 from nettest.events import Event
+from nettest.sysinfo import SysInfo, SysInfoCache
 from nettest.tui.aggregator import TargetAggregator
 from nettest.tui.event_broadcast import EventBroadcast
 from nettest.tui.health import compute_health_summary
-from nettest.tui.styling import ASCII_ICONS, ICONS, classify_probe, sparkline_string
+from nettest.tui.styling import ASCII_ICONS, ICONS, classify_probe, format_ms, sparkline_string
 
 
 class _Pausable(Protocol):
@@ -38,9 +39,11 @@ _SEVERITY_DOT = {
 
 class NettestApp(App[None]):
     CSS = """
+    #sysinfo { height: 3; border: solid $accent; padding: 0 1; }
     #health { height: 8; border: solid $accent; padding: 0 1; }
     #targets { border: solid $accent; padding: 0 1; }
     #events  { border: solid $accent; padding: 0 1; width: 45%; }
+    #weblink { height: 1; padding: 0 1; color: $accent; }
     """
 
     BINDINGS = [
@@ -67,6 +70,8 @@ class NettestApp(App[None]):
         no_color: bool = False,
         theme: str = "dark",
         snapshot_dir: str = ".",
+        sysinfo: SysInfoCache | None = None,
+        web_url: str | None = None,
     ):
         super().__init__()
         self._bus = bus
@@ -77,6 +82,8 @@ class NettestApp(App[None]):
         self._no_color = no_color
         self._theme_name = theme
         self._snapshot_dir = snapshot_dir
+        self._sysinfo = sysinfo
+        self._web_url = web_url
         self.aggregators: dict[tuple[str, str], TargetAggregator] = {}
         self._events: deque[Event] = deque(maxlen=50)
         self._is_quitting = False
@@ -87,10 +94,13 @@ class NettestApp(App[None]):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Static(f"  nettest · {self._hostname}", id="banner")
+        yield Container(Static("gathering system info...", id="sysinfo_text"), id="sysinfo")
         yield Container(Static("loading...", id="health_text"), id="health")
         with Horizontal():
             yield DataTable(id="targets")
             yield Container(Static("(events)", id="events_text"), id="events")
+        if self._web_url:
+            yield Static(f"  Web UI: {self._web_url}", id="weblink")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -126,7 +136,27 @@ class NettestApp(App[None]):
             return "●"
         return _SEVERITY_DOT.get(severity, "●")
 
+    def _format_sysinfo(self, info: SysInfo) -> str:
+        def _f(v: object | None) -> str:
+            return "—" if v is None or v == "" else str(v)
+
+        wifi = info.wifi_label() or "—"
+        rssi = info.wifi_signal_dbm
+        wifi_part = wifi if rssi is None else f"{wifi} ({rssi} dBm)"
+        iface_part = _f(info.default_iface)
+        gw_part = _f(info.default_gateway)
+        return (
+            f"  Wi-Fi: {wifi_part}    "
+            f"Local: {_f(info.local_ip)} via {iface_part} → {gw_part}    "
+            f"Public: {_f(info.public_ip)}"
+        )
+
     def _refresh(self) -> None:
+        if self._sysinfo is not None:
+            self.query_one("#sysinfo_text", Static).update(
+                self._format_sysinfo(self._sysinfo.snapshot()),
+            )
+
         snaps = {k: v.snapshot() for k, v in self.aggregators.items()}
         rows = compute_health_summary(snaps, thresholds=self._cfg.thresholds)
         health_lines = [
@@ -142,9 +172,9 @@ class NettestApp(App[None]):
                 th=getattr(self._cfg.thresholds, probe, self._cfg.thresholds.ping),
             )
             spark = sparkline_string(s.sparkline)
-            last_v = "—" if s.last_ms is None else f"{s.last_ms:.1f}ms"
-            p50_v = "—" if s.p50_ms is None else f"{s.p50_ms:.1f}"
-            p95_v = "—" if s.p95_ms is None else f"{s.p95_ms:.1f}"
+            last_v = format_ms(s.last_ms)
+            p50_v = format_ms(s.p50_ms, with_unit=False)
+            p95_v = format_ms(s.p95_ms, with_unit=False)
             cells = [
                 f"{self._icons.get(probe, '?')} {probe}",
                 target, last_v, p50_v, p95_v,
