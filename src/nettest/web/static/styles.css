@@ -160,6 +160,16 @@ aside#events-panel h2 { margin: 0 0 8px 0; font-size: 13px; font-weight: 600; op
   word-break: break-word; white-space: normal;
   flex: 1; min-width: 0;
 }
+.ev-count {
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 1px 6px;
+  color: var(--muted);
+  flex-shrink: 0;
+  align-self: flex-start;
+  font-variant-numeric: tabular-nums;
+}
 
 footer {
   display: flex; align-items: center; gap: 16px;

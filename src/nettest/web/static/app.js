@@ -388,13 +388,36 @@
     return sev || "ok";
   }
 
+  // Collapse consecutive same-(kind, severity, target) events into one
+  // representative with a count. Backend events don't carry an explicit
+  // target field — the ?? '' makes the key resolve to kind|severity| so
+  // a burst of latency_spike warns groups regardless of probe target.
+  // The group adopts the LATEST occurrence's ts_end + summary so the
+  // displayed time is "just now" rather than the oldest in the burst.
+  function groupEvents(events) {
+    const out = [];
+    for (const ev of events) {
+      const k = `${ev.kind}|${ev.severity}|${ev.target ?? ""}`;
+      const prev = out[out.length - 1];
+      if (prev && prev._key === k) {
+        prev._count = (prev._count || 1) + 1;
+        prev.ts_end = ev.ts_end;
+        prev.summary = ev.summary;
+      } else {
+        out.push({ ...ev, _key: k, _count: 1 });
+      }
+    }
+    return out;
+  }
+
   function refreshEvents() {
     const now = Date.now();
     fetch(`/api/events?from=${now - 24 * 3600 * 1000}&to=${now}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(events => {
+        const grouped = groupEvents(events);
         eventsList.innerHTML = "";
-        for (const e of events.slice(-50).reverse()) {
+        for (const e of grouped.slice(-50).reverse()) {
           const sev = badgeClass(e.severity);
           const li = document.createElement("li");
           li.className = `event-item severity-${sev}`;
@@ -412,6 +435,12 @@
           body.textContent = `${e.kind}: ${e.summary}`;
 
           li.append(time, badge, body);
+          if (e._count > 1) {
+            const count = document.createElement("span");
+            count.className = "ev-count";
+            count.textContent = `×${e._count}`;
+            li.appendChild(count);
+          }
           eventsList.appendChild(li);
         }
       })
