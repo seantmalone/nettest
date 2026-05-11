@@ -10,8 +10,10 @@ import time
 from pathlib import Path
 from typing import Annotated, Any
 
+from collections.abc import Iterator
+
 from fastapi import FastAPI, Query, WebSocket
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from nettest.bus import ResultBus
@@ -116,22 +118,44 @@ def build_app(
         target: str | None = None,
         from_ms: FromQ = 0,
         to_ms: ToQ = None,
-    ) -> Response:
+    ) -> StreamingResponse:
         to_ms_eff = to_ms if to_ms is not None else _now_ms()
-        conn = sqlite3.connect(db_path)
-        try:
-            rows = query_results(conn, probe, target, from_ms, to_ms_eff)
-        finally:
-            conn.close()
-        buf = io.StringIO()
-        w = csv.writer(buf)
-        w.writerow(["ts", "probe", "target", "ok", "duration_ms", "error"])
-        for r in rows:
-            w.writerow([
-                r["ts"], r["probe"], r["target"],
-                int(r["ok"]), r["duration_ms"], r["error"] or "",
-            ])
-        return Response(buf.getvalue(), media_type="text/csv")
+
+        def stream() -> Iterator[str]:
+            # Fresh connection per request, iterated directly off the
+            # sqlite cursor so result rows never all reside in memory.
+            # GeneratorExit (on client disconnect) hits the finally.
+            conn = sqlite3.connect(db_path)
+            try:
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow(["ts", "probe", "target", "ok", "duration_ms", "error"])
+                yield buf.getvalue()
+                buf.seek(0); buf.truncate(0)
+                sql = (
+                    "SELECT ts, probe, target, ok, duration_ms, error "
+                    "FROM results WHERE ts >= ? AND ts <= ?"
+                )
+                params: list[Any] = [from_ms, to_ms_eff]
+                if probe:
+                    sql += " AND probe = ?"
+                    params.append(probe)
+                if target:
+                    sql += " AND target = ?"
+                    params.append(target)
+                sql += " ORDER BY ts"
+                for row in conn.execute(sql, params):
+                    w.writerow([row[0], row[1], row[2], int(row[3]), row[4], row[5] or ""])
+                    yield buf.getvalue()
+                    buf.seek(0); buf.truncate(0)
+            finally:
+                conn.close()
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=nettest.csv"},
+        )
 
     if bus is not None:
         bus_ref = bus
