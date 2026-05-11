@@ -60,14 +60,32 @@
     if (k.startsWith("tcp_connect/host:")) return "tcp·"   + k.slice("tcp_connect/host:".length);
     if (k.startsWith("traceroute/host:"))  return "tr·"    + k.slice("traceroute/host:".length);
     if (k.startsWith("wifi/host:"))        return "wifi·"  + k.slice("wifi/host:".length);
-    if (k.startsWith("http/"))   return "http·"   + k.slice("http/".length).replace(/^https?:\/\//, "");
-    if (k.startsWith("stream/")) return "stream·" + k.slice("stream/".length).replace(/^https?:\/\//, "");
+    if (k.startsWith("http/")) {
+      // http probe targets show up as "url:https://host" — strip both the
+      // type prefix and the URL scheme so the legend reads "http·host".
+      let target = k.slice("http/".length).replace(/^url:/, "").replace(/^https?:\/\//, "");
+      return "http·" + target;
+    }
+    if (k.startsWith("stream/")) {
+      // stream targets are "stream/stream:https://host/path" — peel both
+      // the duplicate stream: prefix and the URL scheme so the legend
+      // shows just the host.
+      let target = k.slice("stream/".length).replace(/^stream:/, "").replace(/^https?:\/\//, "");
+      return "stream·" + target;
+    }
     return k;
   }
 
   // Even more compact for heatmap Y labels: strip common DNS query suffixes.
   function heatmapLabel(k) {
     return shortLabel(k).replace(/\/(google\.com|dnscheck\.example\.com)$/, "");
+  }
+
+  // Pill labels drop the trailing /queryDomain too — what matters in a row
+  // of pills is which probe + which server, not which name the DNS query
+  // was resolving.
+  function pillLabel(k) {
+    return shortLabel(k).replace(/\/[^·/]+$/, "");
   }
 
   function setWsStatus(text, modifier) {
@@ -158,7 +176,7 @@
       statusPills.set(k, pill);
     }
     const sev = severity || "ok";
-    setPillContent(pill, `${shortLabel(k)} ${fmtMs(duration_ms)}`, sev);
+    setPillContent(pill, `${pillLabel(k)} ${fmtMs(duration_ms)}`, sev);
     if (isNew) reorderPills();
     return pill;
   }
@@ -370,12 +388,43 @@
     font: { color: "#e6edf3", size: 11 },
   };
 
+  // Explicit palette for latency lines — avoids Plotly's default green/red
+  // which would visually conflict with the ok/crit severity colors used
+  // throughout the rest of the UI.
+  const LINE_COLORS = [
+    "#58a6ff", "#a78bfa", "#34d399", "#fb923c",
+    "#e879f9", "#22d3ee", "#facc15", "#94a3b8",
+  ];
+
+  // Latency-chart threshold reference lines, in y-data units (ms). The log
+  // axis makes these read as evenly-spaced horizontals.
+  const LATENCY_REF_SHAPES = [
+    { type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: 10,  y1: 10,
+      line: { color: "rgba(62,207,142,0.30)", width: 1, dash: "dot" } },
+    { type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: 100, y1: 100,
+      line: { color: "rgba(234,179,8,0.30)",  width: 1, dash: "dot" } },
+    { type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: 500, y1: 500,
+      line: { color: "rgba(239,68,68,0.30)",  width: 1, dash: "dot" } },
+  ];
+
+  // Wi-Fi RSSI threshold bands as Plotly rects — anchors the raw dBm number
+  // to human meaning: excellent / fair / poor.
+  const WIFI_BAND_SHAPES = [
+    { type: "rect", xref: "paper", yref: "y", x0: 0, x1: 1, y0: -60, y1: -30,
+      fillcolor: "rgba(62,207,142,0.06)", line: { width: 0 }, layer: "below" },
+    { type: "rect", xref: "paper", yref: "y", x0: 0, x1: 1, y0: -70, y1: -60,
+      fillcolor: "rgba(234,179,8,0.06)",  line: { width: 0 }, layer: "below" },
+    { type: "rect", xref: "paper", yref: "y", x0: 0, x1: 1, y0: -100, y1: -70,
+      fillcolor: "rgba(239,68,68,0.06)",  line: { width: 0 }, layer: "below" },
+  ];
+
   function renderLatency() {
     const focused = focusedPillKey();
-    const traces = Object.entries(liveSeries).map(([name, pts]) => {
+    const traces = Object.entries(liveSeries).map(([name, pts], i) => {
       const t = {
         x: pts.map(p => p.ts), y: pts.map(p => p.duration_ms),
         name: shortLabel(name), mode: "lines", type: "scattergl",
+        line: { color: LINE_COLORS[i % LINE_COLORS.length], width: 1.5 },
       };
       if (focused) t.opacity = name === focused ? 1 : 0.15;
       return t;
@@ -386,7 +435,8 @@
       yaxis: { type: "log", title: "ms", dtick: 1, gridcolor: "rgba(255,255,255,0.08)" },
       xaxis: { gridcolor: "rgba(255,255,255,0.08)" },
       legend: { orientation: "h", y: -0.3, x: 0, xanchor: "left", font: { size: 10 } },
-    }, { displayModeBar: false, responsive: true });
+      shapes: LATENCY_REF_SHAPES,
+    }, { displayModeBar: "hover", responsive: true });
   }
 
   function renderLossHeatmap() {
@@ -411,14 +461,17 @@
       return row.map((fail, i) => cnt[i] ? (fail / cnt[i]) * 100 : 0);
     });
     Plotly.react("loss-heatmap",
-      [{ x, y: targets.map(heatmapLabel), z, type: "heatmap", colorscale: "Reds", zmin: 0, zmax: 50 }],
+      // zmax: 10 (not 50) — for this tool, 5% loss is already bad and the
+      // top-of-scale should signal "broken" rather than "literally 50%".
+      // Any loss >= 10% saturates to full red.
+      [{ x, y: targets.map(heatmapLabel), z, type: "heatmap", colorscale: "Reds", zmin: 0, zmax: 10 }],
       {
         ...baseLayout,
         margin: { l: 150, r: 10, t: 10, b: 30 },
         xaxis: { gridcolor: "rgba(255,255,255,0.08)" },
         yaxis: { gridcolor: "rgba(255,255,255,0.08)", automargin: false },
       },
-      { displayModeBar: false, responsive: true });
+      { displayModeBar: "hover", responsive: true });
   }
 
   function renderHttpTiming() {
@@ -457,6 +510,9 @@
   function renderWifi() {
     const wifiEntries = Object.entries(liveSeries).filter(([k]) => k.startsWith("wifi/"));
     const totalPts = wifiEntries.reduce((s, [, pts]) => s + pts.length, 0);
+    // <3 points reads as "not enough yet"; we show a styled empty-state
+    // <p> in place of the chart rather than overlaying text on an empty
+    // dark rectangle.
     if (totalPts < 3) {
       if (wifiPlaceholder) wifiPlaceholder.hidden = false;
       if (wifiPlot) wifiPlot.hidden = true;
@@ -474,6 +530,7 @@
       margin: { l: 55, r: 10, t: 10, b: 30 },
       xaxis: { autorange: true, gridcolor: "rgba(255,255,255,0.08)" },
       yaxis: { autorange: true, title: "dBm", gridcolor: "rgba(255,255,255,0.08)" },
+      shapes: WIFI_BAND_SHAPES,
     }, { displayModeBar: false, responsive: true });
   }
 

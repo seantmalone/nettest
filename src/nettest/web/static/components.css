@@ -74,13 +74,19 @@ header nav button.active {
 .chart-header { margin-bottom: 6px; }
 .chart-title { font-size: 13px; font-weight: 600; opacity: 0.85; letter-spacing: 0.01em; }
 .chart-plot { height: 240px; }
-.chart-wrap { position: relative; min-height: 240px; }
-.chart-placeholder {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--muted); font-size: 13px;
-  pointer-events: none;
+.chart-plot[hidden] { display: none; }
+/* Empty-state shown in place of a chart when the probe doesn't have enough
+   data yet — fills similar vertical space so cards don't jump on first
+   data arrival. */
+.empty-state {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  font-style: italic;
+  padding: 100px 0;
+  margin: 0;
 }
+.empty-state[hidden] { display: none; }
 
 /* Events empty state */
 .event-empty {

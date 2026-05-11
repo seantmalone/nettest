@@ -46,10 +46,8 @@
         </div>
         <div class="chart-card" id="wifi-card">
           <div class="chart-header"><span class="chart-title">Wi-Fi signal (dBm)</span></div>
-          <div class="chart-wrap">
-            <div id="wifi-placeholder" class="chart-placeholder">Collecting Wi-Fi data&hellip;</div>
-            <div id="wifi" class="chart-plot" role="img" aria-label="Wi-Fi signal strength" hidden></div>
-          </div>
+          <p id="wifi-placeholder" class="empty-state">No Wi-Fi data yet</p>
+          <div id="wifi" class="chart-plot" role="img" aria-label="Wi-Fi signal strength" hidden></div>
         </div>
         <div class="chart-card" id="stream-card" hidden>
           <div class="chart-header"><span class="chart-title">Streaming throughput (Mbps)</span></div>
