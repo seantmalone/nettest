@@ -87,7 +87,7 @@
       fromMs = now - RANGE_MS[currentRange];
       hintText = `last ${currentRange}`;
     }
-    exportLink.href = `/api/export.csv?from_ms=${fromMs}`;
+    exportLink.href = `/api/export.csv?from=${fromMs}`;
     if (exportHint) exportHint.textContent = `(${hintText})`;
   }
 
@@ -109,7 +109,7 @@
     }
     const now = Date.now();
     const from = now - RANGE_MS[range];
-    fetch(`/api/results?from_ms=${from}&to_ms=${now}`)
+    fetch(`/api/results?from=${from}&to=${now}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(rows => {
         liveSeries = {};
@@ -261,7 +261,7 @@
 
   function refreshEvents() {
     const now = Date.now();
-    fetch(`/api/events?from_ms=${now - 24 * 3600 * 1000}&to_ms=${now}`)
+    fetch(`/api/events?from=${now - 24 * 3600 * 1000}&to=${now}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(events => {
         eventsList.innerHTML = "";
