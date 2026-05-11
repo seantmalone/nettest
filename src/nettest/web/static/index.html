@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="nettest-ws-path" content="/ws/live" />
 <title>nettest dashboard</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
 <link rel="stylesheet" href="/static/styles.css" />
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
 <script src="/static/app.js" defer></script>
@@ -11,30 +13,31 @@
 <body>
   <header>
     <h1>nettest</h1>
-    <div id="status-row"></div>
-    <nav>
-      <button data-range="live" class="active">Live</button>
-      <button data-range="1h">1h</button>
-      <button data-range="24h">24h</button>
-      <button data-range="7d">7d</button>
+    <div id="status-row" aria-live="polite" aria-label="Probe status"></div>
+    <nav aria-label="Time range">
+      <button data-range="live" class="active" aria-pressed="true">Live</button>
+      <button data-range="1h" aria-pressed="false">1h</button>
+      <button data-range="24h" aria-pressed="false">24h</button>
+      <button data-range="7d" aria-pressed="false">7d</button>
     </nav>
   </header>
   <main>
     <section id="charts">
-      <div id="latency"></div>
-      <div id="loss-heatmap"></div>
-      <div id="http-timing"></div>
-      <div id="wifi"></div>
-      <div id="stream-throughput"></div>
+      <div id="latency" role="img" aria-label="Latency over time"></div>
+      <div id="loss-heatmap" role="img" aria-label="Packet loss heatmap by target and time"></div>
+      <div id="http-timing" role="img" aria-label="HTTP timing breakdown"></div>
+      <div id="wifi" role="img" aria-label="Wi-Fi signal strength"></div>
+      <div id="stream-throughput" role="img" aria-label="Streaming throughput"></div>
     </section>
-    <aside id="events-panel">
+    <aside id="events-panel" aria-label="Recent events">
       <h2>Events</h2>
-      <ul id="events-list"></ul>
+      <ul id="events-list" aria-live="polite"></ul>
     </aside>
   </main>
   <footer>
     <span id="ws-status">connecting&hellip;</span>
-    <a href="/api/export.csv">export CSV</a>
+    <a id="export-csv" href="/api/export.csv">export CSV</a>
+    <span id="export-hint" aria-hidden="true"></span>
   </footer>
 </body>
 </html>
