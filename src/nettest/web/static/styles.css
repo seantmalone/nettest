@@ -24,6 +24,10 @@ header nav button.active {
   border-color: var(--ok); background: var(--hover); color: var(--ok); font-weight: 600;
 }
 
+#sysinfo-row { display: flex; gap: 14px; font-size: 12px; flex-wrap: wrap; background: var(--panel); padding: 6px 10px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+#sysinfo-row .item { white-space: nowrap; }
+#sysinfo-row .label { opacity: 0.6; margin-right: 4px; }
+
 #status-row { display: flex; gap: 12px; flex: 1; flex-wrap: wrap; }
 .status-pill {
   padding: 2px 8px; border-radius: 12px; background: var(--panel);

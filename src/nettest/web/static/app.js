@@ -2,6 +2,7 @@
   const wsStatus = document.getElementById("ws-status");
   const eventsList = document.getElementById("events-list");
   const statusRow = document.getElementById("status-row");
+  const sysinfoRow = document.getElementById("sysinfo-row");
   const wifiCard = document.getElementById("wifi");
   const streamCard = document.getElementById("stream-throughput");
   const exportLink = document.getElementById("export-csv");
@@ -17,6 +18,15 @@
   const intervals = [];
 
   function key(probe, target) { return `${probe}/${target}`; }
+
+  function fmt(v) { return v == null || v === "" ? "—" : String(v); }
+
+  // Smart ms formatting: show one decimal under 10ms (where 0.4 vs 0 matters),
+  // integer ms above. Mirrors the TUI's format_ms helper.
+  function fmtMs(v) {
+    if (v == null) return "—";
+    return v < 10 ? `${v.toFixed(1)}ms` : `${v.toFixed(0)}ms`;
+  }
 
   function setWsStatus(text, modifier) {
     wsStatus.textContent = text;
@@ -47,6 +57,41 @@
     }
   }
 
+  function refreshSysinfo() {
+    if (!sysinfoRow) return;
+    fetch("/api/sysinfo")
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(info => {
+        // macOS 14+ redacts SSID/BSSID without Location permission. Mirror
+        // SysInfo.wifi_label(): prefer SSID, then BSSID, then a "hidden" note.
+        let ssidLabel;
+        if (info.wifi_ssid && info.wifi_ssid !== "<redacted>") {
+          ssidLabel = info.wifi_ssid;
+        } else if (info.wifi_bssid) {
+          ssidLabel = `(hidden) ${info.wifi_bssid}`;
+        } else if (info.wifi_ssid === "<redacted>" || info.wifi_signal_dbm != null) {
+          ssidLabel = "(SSID hidden by macOS)";
+        } else {
+          ssidLabel = null;
+        }
+        const wifi = info.wifi_signal_dbm == null
+          ? fmt(ssidLabel)
+          : `${fmt(ssidLabel)} (${info.wifi_signal_dbm} dBm)`;
+        const items = [
+          ["Host", fmt(info.host)],
+          ["Wi-Fi", wifi],
+          ["Local IP", fmt(info.local_ip)],
+          ["Interface", fmt(info.default_iface)],
+          ["Gateway", fmt(info.default_gateway)],
+          ["Public IP", fmt(info.public_ip)],
+        ];
+        sysinfoRow.innerHTML = items
+          .map(([k, v]) => `<span class="item"><span class="label">${k}:</span>${v}</span>`)
+          .join("");
+      })
+      .catch(err => setWsStatus(`sysinfo error: ${err.message}`, "error"));
+  }
+
   function refreshStatus() {
     fetch("/api/status")
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
@@ -61,7 +106,7 @@
             statusRow.appendChild(pill);
             statusPills.set(k, pill);
           }
-          const dur = row.duration_ms == null ? "—" : `${row.duration_ms.toFixed(0)}ms`;
+          const dur = fmtMs(row.duration_ms);
           const sev = row.severity || (row.ok ? "ok" : "crit");
           setPillContent(pill, `${row.probe}/${row.target}: ${dur}`, sev);
         }
@@ -321,6 +366,7 @@
     intervals.push(setInterval(refreshStatus, 2000));
     intervals.push(setInterval(renderAll, 1000));
     intervals.push(setInterval(refreshEvents, 5000));
+    intervals.push(setInterval(refreshSysinfo, 30000));
   }
 
   function stopIntervals() {
@@ -335,11 +381,13 @@
       startIntervals();
       refreshStatus();
       refreshEvents();
+      refreshSysinfo();
       renderAll();
     }
   });
 
   updateExportLink();
+  refreshSysinfo();
   refreshStatus();
   refreshEvents();
   startIntervals();

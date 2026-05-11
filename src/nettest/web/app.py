@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from nettest.bus import ResultBus
 from nettest.events import Event
+from nettest.sysinfo import SysInfoCache
 from nettest.tui.event_broadcast import EventBroadcast
 from nettest.web.queries import (
     pick_resolution,
@@ -41,6 +42,7 @@ def build_app(
     hostname: str,
     bus: ResultBus | None = None,
     events: EventBroadcast | None = None,
+    sysinfo: SysInfoCache | None = None,
 ) -> FastAPI:
     app = FastAPI(title="nettest")
 
@@ -66,6 +68,13 @@ def build_app(
             return JSONResponse(status_snapshot(conn, since_ms))
         finally:
             conn.close()
+
+    @app.get("/api/sysinfo")
+    async def sysinfo_route() -> JSONResponse:
+        if sysinfo is None:
+            return JSONResponse({"host": hostname})
+        snap = sysinfo.snapshot()
+        return JSONResponse({"host": hostname, **snap.to_dict()})
 
     @app.get("/api/results")
     async def results_route(

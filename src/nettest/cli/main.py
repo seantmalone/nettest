@@ -25,6 +25,7 @@ from nettest.storage.event_sink import insert_event
 from nettest.storage.jsonl_sink import JsonlSink
 from nettest.storage.schema import init_schema
 from nettest.storage.sqlite_sink import SqliteSink
+from nettest.sysinfo import SysInfoCache
 from nettest.target_resolver import resolve_targets
 from nettest.tui.event_broadcast import EventBroadcast
 from nettest.types import Target
@@ -45,6 +46,7 @@ class Runtime:
     db_path: Path
     hostname: str
     events: EventBroadcast
+    sysinfo: SysInfoCache
 
     async def run(self) -> None:
         # ensure schema exists
@@ -73,6 +75,11 @@ class Runtime:
             asyncio.create_task(self.detector.run(), name="detector"),
             asyncio.create_task(self.maintenance.run(), name="maintenance"),
         ]
+        # The sysinfo refresher only benefits the live UIs; skip it when both
+        # are disabled (e.g., --snapshot, run_snapshot) to avoid wasted lookups.
+        if not (self.args.no_tui and self.args.no_web) and not self.args.quiet:
+            tasks.append(asyncio.create_task(self.sysinfo.run(), name="sysinfo"))
+
         web_server: uvicorn.Server | None = None
         if not self.args.no_web and not self.args.quiet:
             from nettest.web.app import build_app
@@ -81,6 +88,7 @@ class Runtime:
                 hostname=self.hostname,
                 bus=self.bus,
                 events=self.events,
+                sysinfo=self.sysinfo,
             )
             uv_cfg = uvicorn.Config(
                 app,
@@ -121,6 +129,7 @@ class Runtime:
             self.jsonl_sink.stop()
             self.detector.stop()
             self.maintenance.stop()
+            self.sysinfo.stop()
 
             # Let uvicorn exit gracefully on its own. Cancelling the web task
             # mid-flight makes starlette's lifespan receive() raise
@@ -190,6 +199,8 @@ def build_runtime(argv: list[str], data_dir: Path | None = None) -> Runtime:
         if targets:
             scheduler.add(probe, targets)
 
+    sysinfo_cache = SysInfoCache()
+
     return Runtime(
         args=args,
         cfg=cfg,
@@ -202,6 +213,7 @@ def build_runtime(argv: list[str], data_dir: Path | None = None) -> Runtime:
         db_path=db_path,
         hostname=hostname,
         events=events,
+        sysinfo=sysinfo_cache,
     )
 
 
