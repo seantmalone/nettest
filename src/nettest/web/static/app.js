@@ -150,6 +150,10 @@
     if (isNew) {
       pill = document.createElement("span");
       pill.dataset.probe = probe;
+      pill.addEventListener("click", (e) => {
+        e.stopPropagation();
+        togglePillFocus(k, pill);
+      });
       statusRow.appendChild(pill);
       statusPills.set(k, pill);
     }
@@ -158,6 +162,34 @@
     if (isNew) reorderPills();
     return pill;
   }
+
+  // Latency-chart trace isolation. The focus state lives on pill.dataset.focused
+  // and is read by renderLatency() so every re-render preserves it; using
+  // Plotly.restyle() alone gets clobbered by the next 1Hz renderAll tick.
+  function focusedPillKey() {
+    for (const [k, p] of statusPills.entries()) {
+      if (p.dataset.focused === "true") return k;
+    }
+    return null;
+  }
+  function clearTraceFocus() {
+    let cleared = false;
+    for (const p of statusPills.values()) {
+      if (p.dataset.focused === "true") { p.dataset.focused = "false"; cleared = true; }
+    }
+    if (cleared) renderLatency();
+  }
+  function togglePillFocus(k, pill) {
+    if (pill.dataset.focused === "true") { clearTraceFocus(); return; }
+    for (const p of statusPills.values()) p.dataset.focused = "false";
+    pill.dataset.focused = "true";
+    renderLatency();
+  }
+  // Click anywhere that isn't a pill clears focus.
+  document.addEventListener("click", (e) => {
+    if (e.target.closest(".status-pill")) return;
+    clearTraceFocus();
+  });
 
   function refreshHealthFromPills() {
     let crit = 0, warn = 0;
@@ -276,6 +308,8 @@
       });
     }
     updateExportLink();
+    // The events panel should reflect whatever window the user just chose.
+    refreshEvents();
     if (range === "live") {
       liveSeries = {};
       allDirty = true;
@@ -320,16 +354,32 @@
     });
   }
 
+  // Digit keys 1-4 switch range. Skipped while typing into inputs/textareas
+  // and when modifier keys are held so browser shortcuts still fire.
+  const KEY_TO_RANGE = { "1": "live", "2": "1h", "3": "24h", "4": "7d" };
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = e.target && e.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+    const range = KEY_TO_RANGE[e.key];
+    if (range) { e.preventDefault(); setRange(range); }
+  });
+
   const baseLayout = {
     paper_bgcolor: "transparent", plot_bgcolor: "transparent",
     font: { color: "#e6edf3", size: 11 },
   };
 
   function renderLatency() {
-    const traces = Object.entries(liveSeries).map(([name, pts]) => ({
-      x: pts.map(p => p.ts), y: pts.map(p => p.duration_ms),
-      name: shortLabel(name), mode: "lines", type: "scattergl",
-    }));
+    const focused = focusedPillKey();
+    const traces = Object.entries(liveSeries).map(([name, pts]) => {
+      const t = {
+        x: pts.map(p => p.ts), y: pts.map(p => p.duration_ms),
+        name: shortLabel(name), mode: "lines", type: "scattergl",
+      };
+      if (focused) t.opacity = name === focused ? 1 : 0.15;
+      return t;
+    });
     Plotly.react("latency", traces, {
       ...baseLayout,
       margin: { l: 55, r: 10, t: 10, b: 70 },
@@ -512,13 +562,27 @@
     return out;
   }
 
+  function eventsWindowMs() {
+    // Live mode shows the last hour of events so the panel isn't empty in a
+    // healthy stretch; ranged modes match the chart window so the user sees
+    // exactly the period they're investigating.
+    return currentRange === "live" ? 3_600_000 : (RANGE_MS[currentRange] || 86_400_000);
+  }
+
   function refreshEvents() {
     const now = Date.now();
-    fetch(`/api/events?from=${now - 24 * 3600 * 1000}&to=${now}`)
+    fetch(`/api/events?from=${now - eventsWindowMs()}&to=${now}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(events => {
         const grouped = groupEvents(events);
         eventsList.innerHTML = "";
+        if (grouped.length === 0) {
+          const li = document.createElement("li");
+          li.className = "event-empty";
+          li.textContent = "No events in this window";
+          eventsList.appendChild(li);
+          return;
+        }
         for (const e of grouped.slice(-50).reverse()) {
           const sev = badgeClass(e.severity);
           const li = document.createElement("li");
@@ -551,6 +615,8 @@
 
   let wsAttempt = 0;
   let reconnectTimer = null;
+  let wsLive = false;
+  let lastMessageTs = Date.now();
 
   function reconnectDelayMs() {
     const base = Math.min(30_000, 1000 * Math.pow(2, wsAttempt));
@@ -569,14 +635,16 @@
       return;
     }
     ws.onopen = () => {
+      wsLive = true; lastMessageTs = Date.now();
       setWsStatus("live", "live"); wsAttempt = 0;
       // A reconnect can follow an interface flip — refresh sysinfo immediately
       // so the displayed IP/gateway match the path we're actually on now.
       refreshSysinfo();
     };
-    ws.onclose = () => { scheduleReconnect(); };
+    ws.onclose = () => { wsLive = false; scheduleReconnect(); };
     ws.onerror = () => { /* onclose will follow */ };
     ws.onmessage = (msg) => {
+      lastMessageTs = Date.now();
       let m;
       try { m = JSON.parse(msg.data); } catch { return; }
       if (m.kind === "result") {
@@ -600,6 +668,20 @@
     reconnectTimer = setTimeout(connectWs, delay);
   }
 
+  // The ws-status text shows "live · Ns ago" when no WS message has arrived
+  // in 10+ seconds. Only textContent is touched so the className stays at
+  // ws-pill ws-live — the pill color doesn't flicker, only the text.
+  function checkWsStaleness() {
+    if (!wsLive) return;
+    const staleness = Date.now() - lastMessageTs;
+    if (staleness > 10_000) {
+      const t = `live · ${Math.round(staleness / 1000)}s ago`;
+      if (wsStatus.textContent !== t) wsStatus.textContent = t;
+    } else if (wsStatus.textContent !== "live") {
+      wsStatus.textContent = "live";
+    }
+  }
+
   function startIntervals() {
     if (intervals.length) return;
     // Status pills are now driven by the WS onmessage handler; this 30s
@@ -611,6 +693,7 @@
     // Sysinfo at 10s so an interface flip during diagnosis surfaces fast;
     // also retriggered explicitly on WS reconnect (see connectWs.onopen).
     intervals.push(setInterval(refreshSysinfo, 10_000));
+    intervals.push(setInterval(checkWsStaleness, 1000));
   }
 
   function stopIntervals() {

@@ -82,6 +82,15 @@ header nav button.active {
   pointer-events: none;
 }
 
+/* Events empty state */
+.event-empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 12px 0;
+  text-align: center;
+  list-style: none;
+}
+
 /* Events list */
 aside#events-panel h2 {
   margin: 0 0 8px 0;
