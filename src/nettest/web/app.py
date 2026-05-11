@@ -47,11 +47,15 @@ def build_app(
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
+    _index_page = _STATIC / "index.html"
+    _index_html: str | None = (
+        _index_page.read_text(encoding="utf-8") if _index_page.exists() else None
+    )
+
     @app.get("/")
     async def index() -> HTMLResponse:
-        page = _STATIC / "index.html"
-        if page.exists():
-            return HTMLResponse(page.read_text(encoding="utf-8"))
+        if _index_html is not None:
+            return HTMLResponse(_index_html)
         return HTMLResponse(_FALLBACK_HTML.format(host=hostname))
 
     @app.get("/api/status")
