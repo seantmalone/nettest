@@ -10,12 +10,15 @@ import time
 from pathlib import Path
 from typing import Annotated, Any
 
+from collections.abc import Iterator
+
 from fastapi import FastAPI, Query, WebSocket
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from nettest.bus import ResultBus
 from nettest.events import Event
+from nettest.sysinfo import SysInfoCache
 from nettest.tui.event_broadcast import EventBroadcast
 from nettest.web.queries import (
     pick_resolution,
@@ -23,6 +26,7 @@ from nettest.web.queries import (
     query_results,
     query_rollups_1h,
     query_rollups_1m,
+    severity_for,
     status_snapshot,
 )
 
@@ -41,17 +45,22 @@ def build_app(
     hostname: str,
     bus: ResultBus | None = None,
     events: EventBroadcast | None = None,
+    sysinfo: SysInfoCache | None = None,
 ) -> FastAPI:
     app = FastAPI(title="nettest")
 
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
+    _index_page = _STATIC / "index.html"
+    _index_html: str | None = (
+        _index_page.read_text(encoding="utf-8") if _index_page.exists() else None
+    )
+
     @app.get("/")
     async def index() -> HTMLResponse:
-        page = _STATIC / "index.html"
-        if page.exists():
-            return HTMLResponse(page.read_text(encoding="utf-8"))
+        if _index_html is not None:
+            return HTMLResponse(_index_html)
         return HTMLResponse(_FALLBACK_HTML.format(host=hostname))
 
     @app.get("/api/status")
@@ -62,6 +71,13 @@ def build_app(
             return JSONResponse(status_snapshot(conn, since_ms))
         finally:
             conn.close()
+
+    @app.get("/api/sysinfo")
+    async def sysinfo_route() -> JSONResponse:
+        if sysinfo is None:
+            return JSONResponse({"host": hostname})
+        snap = sysinfo.snapshot()
+        return JSONResponse({"host": hostname, **snap.to_dict()})
 
     @app.get("/api/results")
     async def results_route(
@@ -102,22 +118,44 @@ def build_app(
         target: str | None = None,
         from_ms: FromQ = 0,
         to_ms: ToQ = None,
-    ) -> Response:
+    ) -> StreamingResponse:
         to_ms_eff = to_ms if to_ms is not None else _now_ms()
-        conn = sqlite3.connect(db_path)
-        try:
-            rows = query_results(conn, probe, target, from_ms, to_ms_eff)
-        finally:
-            conn.close()
-        buf = io.StringIO()
-        w = csv.writer(buf)
-        w.writerow(["ts", "probe", "target", "ok", "duration_ms", "error"])
-        for r in rows:
-            w.writerow([
-                r["ts"], r["probe"], r["target"],
-                int(r["ok"]), r["duration_ms"], r["error"] or "",
-            ])
-        return Response(buf.getvalue(), media_type="text/csv")
+
+        def stream() -> Iterator[str]:
+            # Fresh connection per request, iterated directly off the
+            # sqlite cursor so result rows never all reside in memory.
+            # GeneratorExit (on client disconnect) hits the finally.
+            conn = sqlite3.connect(db_path)
+            try:
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow(["ts", "probe", "target", "ok", "duration_ms", "error"])
+                yield buf.getvalue()
+                buf.seek(0); buf.truncate(0)
+                sql = (
+                    "SELECT ts, probe, target, ok, duration_ms, error "
+                    "FROM results WHERE ts >= ? AND ts <= ?"
+                )
+                params: list[Any] = [from_ms, to_ms_eff]
+                if probe:
+                    sql += " AND probe = ?"
+                    params.append(probe)
+                if target:
+                    sql += " AND target = ?"
+                    params.append(target)
+                sql += " ORDER BY ts"
+                for row in conn.execute(sql, params):
+                    w.writerow([row[0], row[1], row[2], int(row[3]), row[4], row[5] or ""])
+                    yield buf.getvalue()
+                    buf.seek(0); buf.truncate(0)
+            finally:
+                conn.close()
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=nettest.csv"},
+        )
 
     if bus is not None:
         bus_ref = bus
@@ -149,8 +187,17 @@ def build_app(
             async def _drain_results() -> None:
                 while True:
                     r = await result_q.get()
+                    payload = r.to_json_dict()
+                    # Tag with the same severity the REST status snapshot uses
+                    # so the client can update pills + health bar from a single
+                    # field instead of re-deriving from ok + duration_ms.
+                    payload["severity"] = severity_for(
+                        payload.get("probe", ""),
+                        bool(payload.get("ok")),
+                        payload.get("duration_ms"),
+                    )
                     with contextlib.suppress(asyncio.QueueFull):
-                        out_q.put_nowait({"kind": "result", **r.to_json_dict()})
+                        out_q.put_nowait({"kind": "result", **payload})
 
             drain_task = asyncio.create_task(_drain_results())
             try:

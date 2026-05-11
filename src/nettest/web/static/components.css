@@ -1,0 +1,159 @@
+/* Links */
+a { color: var(--ok); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+
+/* Wordmark + range nav buttons */
+header h1 {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px; letter-spacing: 0.08em; font-weight: 600;
+  flex: 1;
+}
+header nav { display: flex; gap: 6px; }
+header nav button {
+  background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+  padding: 4px 10px; border-radius: 4px; cursor: pointer;
+  font: inherit; transition: background-color 120ms ease, border-color 120ms ease;
+}
+header nav button:hover { background: var(--hover); }
+header nav button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+header nav button.active {
+  border-color: var(--ok); background: var(--hover); color: var(--ok); font-weight: 600;
+}
+
+/* Sysinfo strip — label dimmed at 11px, value brighter at 12px, so the row
+   reads as labeled facts instead of a uniform stripe. */
+#sysinfo-row { background: var(--bg); font-variant-numeric: tabular-nums; }
+#sysinfo-row .item { white-space: nowrap; font-size: 12px; }
+#sysinfo-row .label { color: var(--muted); margin-right: 6px; font-size: 11px; }
+#sysinfo-row .value { color: var(--fg); }
+
+/* Health bar — most important status line on the page, slightly larger
+   than other 12px chrome and heavier weight. */
+#health-bar { font-size: 13px; font-weight: 700; }
+#health-bar[data-state="ok"]   { color: var(--ok); }
+#health-bar[data-state="warn"] { color: var(--warn); }
+#health-bar[data-state="crit"] { color: var(--crit); }
+.health-dot { font-size: 14px; line-height: 1; }
+
+/* Status pills — colored left border in addition to text color so severity
+   is encoded structurally as well as chromatically. Transparent border
+   on ok keeps total width stable across states. */
+.status-pill {
+  padding: 2px 8px 2px 6px;
+  border-left: 2px solid transparent;
+  border-radius: 4px 12px 12px 4px;
+  background: var(--panel);
+  font-size: 12px; min-width: 12ch; text-align: center;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.status-pill.ok   { color: var(--ok); }
+.status-pill.warn { color: var(--warn); border-left-color: var(--warn); }
+.status-pill.crit { color: var(--crit); border-left-color: var(--crit); }
+.status-pill[data-focused="true"] {
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
+}
+/* Thin vertical hairline between probe-type groups in #status-row. */
+.pill-sep {
+  width: 1px; height: 16px;
+  background: var(--hairline);
+  align-self: center; flex-shrink: 0;
+}
+
+/* Chart cards */
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 16px 16px 4px;
+}
+.chart-card[hidden] { display: none; }
+.chart-header { margin-bottom: 6px; }
+.chart-title { font-size: 13px; font-weight: 600; opacity: 0.85; letter-spacing: 0.01em; }
+.chart-plot { height: 240px; }
+.chart-plot[hidden] { display: none; }
+/* Empty-state shown in place of a chart when the probe doesn't have enough
+   data yet — fills similar vertical space so cards don't jump on first
+   data arrival. */
+.empty-state {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  font-style: italic;
+  padding: 100px 0;
+  margin: 0;
+}
+.empty-state[hidden] { display: none; }
+
+/* Events empty state */
+.event-empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 12px 0;
+  text-align: center;
+  list-style: none;
+}
+
+/* Events list */
+aside#events-panel h2 {
+  margin: 0 0 8px 0;
+  font-size: 13px; font-weight: 600; opacity: 0.85;
+  letter-spacing: 0.02em; text-transform: uppercase;
+}
+#events-list { list-style: none; padding: 0; margin: 0; font-variant-numeric: tabular-nums; }
+.event-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.event-item:last-child { border-bottom: none; }
+.ev-time { font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0; min-width: 5.5ch; }
+.ev-badge {
+  font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+  white-space: nowrap; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.ev-badge.warn { background: rgba(234, 179, 8, 0.18); color: var(--warn); }
+.ev-badge.crit { background: rgba(239, 68, 68, 0.18); color: var(--crit); }
+.ev-badge.ok   { background: rgba(62, 207, 142, 0.18); color: var(--ok); }
+.ev-body {
+  font-size: 12px; line-height: 1.4;
+  word-break: break-word; white-space: normal;
+  flex: 1; min-width: 0;
+}
+.ev-count {
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 1px 6px;
+  color: var(--muted);
+  flex-shrink: 0;
+  align-self: flex-start;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Footer */
+footer { font-size: 12px; }
+#export-csv {
+  display: inline-block;
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 3px 10px; border-radius: 4px;
+  font-size: 12px; text-decoration: none;
+  transition: background-color 120ms ease;
+}
+#export-csv:hover { background: var(--hover); text-decoration: none; }
+#export-csv:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#export-hint { opacity: 0.55; }
+
+/* WS connection pill */
+#ws-status.ws-pill {
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  background: var(--panel); color: var(--muted);
+  border: 1px solid var(--border);
+}
+#ws-status.ws-live { color: var(--ok); border-color: rgba(62, 207, 142, 0.4); }
+#ws-status.ws-error { color: var(--crit); border-color: rgba(239, 68, 68, 0.4); }

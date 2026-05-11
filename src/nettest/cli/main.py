@@ -79,6 +79,7 @@ class Runtime:
         # are disabled (e.g., --snapshot, run_snapshot) to avoid wasted lookups.
         if not (self.args.no_tui and self.args.no_web) and not self.args.quiet:
             tasks.append(asyncio.create_task(self.sysinfo.run(), name="sysinfo"))
+
         web_server: uvicorn.Server | None = None
         web_url: str | None = None
         if not self.args.no_web and not self.args.quiet:

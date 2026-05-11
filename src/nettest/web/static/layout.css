@@ -1,0 +1,80 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  display: flex; flex-direction: column; min-height: 100vh;
+}
+
+header {
+  padding: 10px 20px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--hairline);
+  flex: 0 0 auto;
+}
+#sysinfo-row, #health-bar, #status-row, footer { flex: 0 0 auto; }
+
+#sysinfo-row {
+  display: flex; gap: 24px; flex-wrap: wrap;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+#health-bar {
+  padding: 6px 20px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+#status-row {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Mobile-first: charts above, events panel below. Page scrolls naturally. */
+main {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+#charts { padding: 12px; min-width: 0; }
+aside#events-panel { padding: 12px; border-top: 1px solid var(--hairline); }
+
+#chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+}
+/* Latency + loss benefit from horizontal space — let them span every column. */
+#latency-card, #loss-card { grid-column: 1 / -1; }
+
+footer {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--hairline);
+}
+.footer-spacer { flex: 1; }
+
+/* Desktop: side-by-side with internal scroll so the chrome stays put. */
+@media (min-width: 960px) {
+  main {
+    grid-template-columns: 1fr minmax(380px, 30vw);
+    grid-template-rows: 1fr;
+    overflow: hidden;
+  }
+  #charts { overflow-y: auto; padding: 16px; }
+  aside#events-panel {
+    overflow-y: auto;
+    border-top: none;
+    border-left: 1px solid var(--hairline);
+    padding: 16px;
+  }
+}
+
+/* On very narrow viewports the range nav wraps to its own row. */
+@media (max-width: 600px) {
+  header nav { width: 100%; justify-content: flex-start; }
+}
