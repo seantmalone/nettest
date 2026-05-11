@@ -45,10 +45,7 @@ def format_ms(value: float | None, with_unit: bool = True) -> str:
     """
     if value is None:
         return "—"
-    if value < 10:
-        s = f"{value:.1f}"
-    else:
-        s = f"{value:.0f}"
+    s = f"{value:.1f}" if value < 10 else f"{value:.0f}"
     return f"{s}ms" if with_unit else s
 
 
