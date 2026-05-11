@@ -116,7 +116,7 @@ def query_events(
 # Picked to match common operator intuition: DNS resolvers should answer in
 # tens of ms, HTTP under a second, traceroute under a few seconds. Probes
 # not listed here have no warn band (severity stays "ok" while ok=True).
-_WARN_MS: dict[str, float] = {
+WARN_MS: dict[str, float] = {
     "ping": 100,
     "dns_cached": 50,
     "dns_uncached": 200,
@@ -127,10 +127,15 @@ _WARN_MS: dict[str, float] = {
 }
 
 
-def _severity(probe: str, ok: bool, duration_ms: float | None) -> str:
+def severity_for(probe: str, ok: bool, duration_ms: float | None) -> str:
+    """Map a single probe outcome to the UI's ok/warn/crit tier.
+
+    Single source of truth: also used by the WebSocket result envelope so
+    live pills are driven by the same logic as /api/status snapshots.
+    """
     if not ok:
         return "crit"
-    warn = _WARN_MS.get(probe)
+    warn = WARN_MS.get(probe)
     if warn is None or duration_ms is None:
         return "ok"
     return "warn" if duration_ms >= warn else "ok"
@@ -151,7 +156,7 @@ def status_snapshot(
         {
             "probe": r[0], "target": r[1], "ts": r[2],
             "ok": bool(r[3]), "duration_ms": r[4], "error": r[5],
-            "severity": _severity(r[0], bool(r[3]), r[4]),
+            "severity": severity_for(r[0], bool(r[3]), r[4]),
         }
         for r in conn.execute(sql, (since_ms,))
     ]

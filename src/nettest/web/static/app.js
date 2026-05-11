@@ -22,6 +22,11 @@
   const RANGE_MS = { "1h": 3_600_000, "24h": 86_400_000, "7d": 7 * 86_400_000 };
   const intervals = [];
 
+  // Render-skip state. Only chart sections whose contributing keys changed
+  // since the last tick get re-drawn — idle ticks become no-ops.
+  const dirtyKeys = new Set();
+  let allDirty = true;
+
   function key(probe, target) { return `${probe}/${target}`; }
 
   function fmt(v) { return v == null || v === "" ? "—" : String(v); }
@@ -29,6 +34,13 @@
   function fmtMs(v) {
     if (v == null) return "—";
     return v < 10 ? `${v.toFixed(1)}ms` : `${v.toFixed(0)}ms`;
+  }
+
+  function fmtDuration(ms) {
+    if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+    if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+    if (ms < 86_400_000) return `${Math.round(ms / 3_600_000)}h`;
+    return `${Math.round(ms / 86_400_000)}d`;
   }
 
   // Compact label for chart legends, status pills, x-axis labels:
@@ -74,6 +86,7 @@
       metrics: r.metrics || {},
     });
     if (series.length > MAX_LIVE_POINTS) series.shift();
+    dirtyKeys.add(k);
   }
 
   function setPillContent(pill, text, severity) {
@@ -85,6 +98,28 @@
       pill.className = `status-pill ${severity}`;
       pill.dataset.sev = severity;
     }
+  }
+
+  function upsertPill(probe, target, duration_ms, severity) {
+    const k = key(probe, target);
+    let pill = statusPills.get(k);
+    if (!pill) {
+      pill = document.createElement("span");
+      statusRow.appendChild(pill);
+      statusPills.set(k, pill);
+    }
+    const sev = severity || "ok";
+    setPillContent(pill, `${shortLabel(k)} ${fmtMs(duration_ms)}`, sev);
+    return pill;
+  }
+
+  function refreshHealthFromPills() {
+    let crit = 0, warn = 0;
+    for (const pill of statusPills.values()) {
+      if (pill.dataset.sev === "crit") crit++;
+      else if (pill.dataset.sev === "warn") warn++;
+    }
+    updateHealthBar(crit, warn, statusPills.size);
   }
 
   function updateHealthBar(critCount, warnCount, totalProbes) {
@@ -110,26 +145,18 @@
     }
   }
 
+  // Authoritative snapshot from the DB. Used for initial paint + a 30s
+  // fallback while the WS handler keeps pills live in between. Also the
+  // only place that prunes pills whose probe/target stopped reporting.
   function refreshStatus() {
     fetch("/api/status")
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(rows => {
         const seen = new Set();
-        let critCount = 0, warnCount = 0;
         for (const row of rows) {
-          const k = key(row.probe, row.target);
-          seen.add(k);
-          let pill = statusPills.get(k);
-          if (!pill) {
-            pill = document.createElement("span");
-            statusRow.appendChild(pill);
-            statusPills.set(k, pill);
-          }
-          const dur = fmtMs(row.duration_ms);
           const sev = row.severity || (row.ok ? "ok" : "crit");
-          if (sev === "crit") critCount++;
-          else if (sev === "warn") warnCount++;
-          setPillContent(pill, `${shortLabel(k)} ${dur}`, sev);
+          upsertPill(row.probe, row.target, row.duration_ms, sev);
+          seen.add(key(row.probe, row.target));
         }
         for (const [k, pill] of statusPills) {
           if (!seen.has(k)) {
@@ -137,7 +164,7 @@
             statusPills.delete(k);
           }
         }
-        updateHealthBar(critCount, warnCount, rows.length);
+        refreshHealthFromPills();
       })
       .catch(err => setWsStatus(`status error: ${err.message}`, "error"));
   }
@@ -204,6 +231,7 @@
     updateExportLink();
     if (range === "live") {
       liveSeries = {};
+      allDirty = true;
       renderAll();
       return;
     }
@@ -232,6 +260,7 @@
             });
           }
         }
+        allDirty = true;
         renderAll();
       })
       .catch(err => setWsStatus(`range fetch error: ${err.message}`, "error"));
@@ -299,8 +328,16 @@
     const httpEntries = Object.entries(liveSeries).filter(([k]) => k.startsWith("http/"));
     if (httpEntries.length === 0) return;
     const xLabels = httpEntries.map(([k]) => shortLabel(k));
+    // Average over a time window rather than a fixed count of results, so the
+    // chart compares apples-to-apples across targets with different probe
+    // cadences. Live mode uses last 60s; ranged views use the range itself.
+    const windowMs = currentRange === "live" ? 60_000 : RANGE_MS[currentRange];
+    const cutoffMs = Date.now() - windowMs;
     const avg = (pts, k) => {
-      const vals = pts.slice(-20).map(p => p.metrics?.[k]).filter(v => v != null);
+      const vals = pts
+        .filter(p => p.ts.getTime() > cutoffMs)
+        .map(p => p.metrics?.[k])
+        .filter(v => v != null);
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
     };
     const traces = ["dns_ms", "connect_ms", "tls_ms", "ttfb_ms"].map(k => ({
@@ -308,12 +345,14 @@
       y: httpEntries.map(([_, pts]) => avg(pts, k)),
       name: k, type: "bar",
     }));
+    const titleEl = document.getElementById("http-title");
+    if (titleEl) titleEl.textContent = `HTTP timing breakdown (avg last ${fmtDuration(windowMs)})`;
     Plotly.react("http-timing", traces, {
       ...baseLayout,
       margin: { l: 55, r: 10, t: 10, b: 70 },
       barmode: "stack",
       xaxis: { gridcolor: "rgba(255,255,255,0.08)" },
-      yaxis: { title: "ms (avg last 20)", gridcolor: "rgba(255,255,255,0.08)" },
+      yaxis: { title: "ms", gridcolor: "rgba(255,255,255,0.08)" },
       legend: { orientation: "h", y: -0.3, x: 0, xanchor: "left", font: { size: 10 } },
     }, { displayModeBar: false, responsive: true });
   }
@@ -362,11 +401,27 @@
   }
 
   function renderAll() {
+    const renderEverything = allDirty;
+    allDirty = false;
+    const hadAnyDirty = renderEverything || dirtyKeys.size > 0;
+    let httpDirty = renderEverything;
+    let wifiDirty = renderEverything;
+    let streamDirty = renderEverything;
+    if (!renderEverything) {
+      for (const k of dirtyKeys) {
+        if (k.startsWith("http/")) httpDirty = true;
+        else if (k.startsWith("wifi/")) wifiDirty = true;
+        else if (k.startsWith("stream/")) streamDirty = true;
+      }
+    }
+    dirtyKeys.clear();
+    if (!hadAnyDirty) return;
+    // Latency + heatmap show all series, so any new key dirties both.
     renderLatency();
     renderLossHeatmap();
-    renderHttpTiming();
-    renderWifi();
-    renderStream();
+    if (httpDirty) renderHttpTiming();
+    if (wifiDirty) renderWifi();
+    if (streamDirty) renderStream();
   }
 
   function fmtEventTime(ts) {
@@ -474,6 +529,11 @@
       try { m = JSON.parse(msg.data); } catch { return; }
       if (m.kind === "result") {
         pushPoint(m);
+        // WS-driven pill update: avoids the 2s polling latency the old
+        // setInterval(refreshStatus, 2000) had. The 30s refreshStatus
+        // fallback still runs to prune pills whose probe disappeared.
+        upsertPill(m.probe, m.target, m.duration_ms, m.severity);
+        refreshHealthFromPills();
       } else if (m.kind === "event") {
         refreshEvents();
       }
@@ -490,7 +550,10 @@
 
   function startIntervals() {
     if (intervals.length) return;
-    intervals.push(setInterval(refreshStatus, 2000));
+    // Status pills are now driven by the WS onmessage handler; this 30s
+    // poll is just a fallback in case the WS is disconnected, and it
+    // also handles pruning pills whose probe stopped reporting.
+    intervals.push(setInterval(refreshStatus, 30000));
     intervals.push(setInterval(renderAll, 1000));
     intervals.push(setInterval(refreshEvents, 5000));
     intervals.push(setInterval(refreshSysinfo, 30000));
@@ -509,6 +572,7 @@
       refreshStatus();
       refreshEvents();
       refreshSysinfo();
+      allDirty = true;
       renderAll();
     }
   });

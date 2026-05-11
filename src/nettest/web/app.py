@@ -24,6 +24,7 @@ from nettest.web.queries import (
     query_results,
     query_rollups_1h,
     query_rollups_1m,
+    severity_for,
     status_snapshot,
 )
 
@@ -162,8 +163,17 @@ def build_app(
             async def _drain_results() -> None:
                 while True:
                     r = await result_q.get()
+                    payload = r.to_json_dict()
+                    # Tag with the same severity the REST status snapshot uses
+                    # so the client can update pills + health bar from a single
+                    # field instead of re-deriving from ok + duration_ms.
+                    payload["severity"] = severity_for(
+                        payload.get("probe", ""),
+                        bool(payload.get("ok")),
+                        payload.get("duration_ms"),
+                    )
                     with contextlib.suppress(asyncio.QueueFull):
-                        out_q.put_nowait({"kind": "result", **r.to_json_dict()})
+                        out_q.put_nowait({"kind": "result", **payload})
 
             drain_task = asyncio.create_task(_drain_results())
             try:
