@@ -22,27 +22,46 @@ header nav button.active {
   border-color: var(--ok); background: var(--hover); color: var(--ok); font-weight: 600;
 }
 
-/* Sysinfo strip */
-#sysinfo-row { font-size: 12px; background: var(--bg); font-variant-numeric: tabular-nums; }
-#sysinfo-row .item { white-space: nowrap; }
-#sysinfo-row .label { color: var(--muted); margin-right: 6px; }
+/* Sysinfo strip — label dimmed at 11px, value brighter at 12px, so the row
+   reads as labeled facts instead of a uniform stripe. */
+#sysinfo-row { background: var(--bg); font-variant-numeric: tabular-nums; }
+#sysinfo-row .item { white-space: nowrap; font-size: 12px; }
+#sysinfo-row .label { color: var(--muted); margin-right: 6px; font-size: 11px; }
+#sysinfo-row .value { color: var(--fg); }
 
-/* Health bar */
-#health-bar { font-size: 12px; font-weight: 600; }
+/* Health bar — most important status line on the page, slightly larger
+   than other 12px chrome and heavier weight. */
+#health-bar { font-size: 13px; font-weight: 700; }
 #health-bar[data-state="ok"]   { color: var(--ok); }
 #health-bar[data-state="warn"] { color: var(--warn); }
 #health-bar[data-state="crit"] { color: var(--crit); }
 .health-dot { font-size: 14px; line-height: 1; }
 
-/* Status pills */
+/* Status pills — colored left border in addition to text color so severity
+   is encoded structurally as well as chromatically. Transparent border
+   on ok keeps total width stable across states. */
 .status-pill {
-  padding: 2px 8px; border-radius: 12px; background: var(--panel);
+  padding: 2px 8px 2px 6px;
+  border-left: 2px solid transparent;
+  border-radius: 4px 12px 12px 4px;
+  background: var(--panel);
   font-size: 12px; min-width: 12ch; text-align: center;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
 .status-pill.ok   { color: var(--ok); }
-.status-pill.warn { color: var(--warn); }
-.status-pill.crit { color: var(--crit); }
+.status-pill.warn { color: var(--warn); border-left-color: var(--warn); }
+.status-pill.crit { color: var(--crit); border-left-color: var(--crit); }
+.status-pill[data-focused="true"] {
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
+}
+/* Thin vertical hairline between probe-type groups in #status-row. */
+.pill-sep {
+  width: 1px; height: 16px;
+  background: var(--hairline);
+  align-self: center; flex-shrink: 0;
+}
 
 /* Chart cards */
 .chart-card {

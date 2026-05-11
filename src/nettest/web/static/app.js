@@ -100,16 +100,62 @@
     }
   }
 
+  // Order probe groups left-to-right by intuitive read order; unknown probes
+  // sort to the end. dns_cached + dns_uncached share the "dns" group so they
+  // sit adjacent in the row.
+  const PROBE_ORDER = [
+    "ping", "dns_cached", "dns_uncached", "tcp_connect",
+    "http", "traceroute", "mtu", "wifi", "stream", "bandwidth",
+  ];
+  function probeOrderIdx(probe) {
+    const i = PROBE_ORDER.indexOf(probe);
+    return i === -1 ? PROBE_ORDER.length : i;
+  }
+  function probeGroup(probe) {
+    if (probe.startsWith("dns")) return "dns";
+    if (probe.startsWith("tcp")) return "tcp";
+    return probe;
+  }
+
+  // Reattach pills in probe-group order and insert hairline separators between
+  // groups. Runs after refreshStatus and after upsertPill creates a new pill;
+  // in-place text/severity updates via the WS path don't trigger a reorder.
+  function reorderPills() {
+    const entries = Array.from(statusPills.entries()).sort(([a, pa], [b, pb]) => {
+      const probeA = a.split("/")[0];
+      const probeB = b.split("/")[0];
+      const oa = probeOrderIdx(probeA);
+      const ob = probeOrderIdx(probeB);
+      if (oa !== ob) return oa - ob;
+      return a.localeCompare(b);
+    });
+    statusRow.querySelectorAll(".pill-sep").forEach(s => s.remove());
+    let prevGroup = null;
+    for (const [k, pill] of entries) {
+      const g = probeGroup(k.split("/")[0]);
+      if (prevGroup != null && g !== prevGroup) {
+        const sep = document.createElement("span");
+        sep.className = "pill-sep";
+        statusRow.appendChild(sep);
+      }
+      statusRow.appendChild(pill);
+      prevGroup = g;
+    }
+  }
+
   function upsertPill(probe, target, duration_ms, severity) {
     const k = key(probe, target);
     let pill = statusPills.get(k);
-    if (!pill) {
+    const isNew = !pill;
+    if (isNew) {
       pill = document.createElement("span");
+      pill.dataset.probe = probe;
       statusRow.appendChild(pill);
       statusPills.set(k, pill);
     }
     const sev = severity || "ok";
     setPillContent(pill, `${shortLabel(k)} ${fmtMs(duration_ms)}`, sev);
+    if (isNew) reorderPills();
     return pill;
   }
 
@@ -164,6 +210,7 @@
             statusPills.delete(k);
           }
         }
+        reorderPills();
         refreshHealthFromPills();
       })
       .catch(err => setWsStatus(`status error: ${err.message}`, "error"));
@@ -196,7 +243,7 @@
           ["Public IP", fmt(info.public_ip)],
         ];
         sysinfoRow.innerHTML = items
-          .map(([k, v]) => `<span class="item"><span class="label">${k}:</span>${v}</span>`)
+          .map(([k, v]) => `<span class="item"><span class="label">${k}:</span><span class="value">${v}</span></span>`)
           .join("");
       })
       .catch(err => setWsStatus(`sysinfo error: ${err.message}`, "error"));
@@ -521,7 +568,12 @@
       scheduleReconnect();
       return;
     }
-    ws.onopen = () => { setWsStatus("live", "live"); wsAttempt = 0; };
+    ws.onopen = () => {
+      setWsStatus("live", "live"); wsAttempt = 0;
+      // A reconnect can follow an interface flip — refresh sysinfo immediately
+      // so the displayed IP/gateway match the path we're actually on now.
+      refreshSysinfo();
+    };
     ws.onclose = () => { scheduleReconnect(); };
     ws.onerror = () => { /* onclose will follow */ };
     ws.onmessage = (msg) => {
@@ -556,7 +608,9 @@
     intervals.push(setInterval(refreshStatus, 30000));
     intervals.push(setInterval(renderAll, 1000));
     intervals.push(setInterval(refreshEvents, 5000));
-    intervals.push(setInterval(refreshSysinfo, 30000));
+    // Sysinfo at 10s so an interface flip during diagnosis surfaces fast;
+    // also retriggered explicitly on WS reconnect (see connectWs.onopen).
+    intervals.push(setInterval(refreshSysinfo, 10_000));
   }
 
   function stopIntervals() {
