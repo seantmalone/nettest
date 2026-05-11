@@ -1,31 +1,9 @@
-:root {
-  --ok: #3ecf8e; --warn: #eab308; --crit: #ef4444;
-  --bg: #0d1117; --fg: #e6edf3; --panel: #161b22;
-  --border: #2d333b; --hover: #1f242c;
-  --focus: #58a6ff;
-  --muted: rgba(230, 237, 243, 0.55);
-  --hairline: rgba(255, 255, 255, 0.1);
-  --card-bg: rgba(255, 255, 255, 0.025);
-  --card-border: rgba(255, 255, 255, 0.07);
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0; background: var(--bg); color: var(--fg);
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  display: flex; flex-direction: column; min-height: 100vh;
-}
-
+/* Links */
 a { color: var(--ok); text-decoration: none; }
 a:hover { text-decoration: underline; }
 a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
 
-header {
-  padding: 10px 20px;
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  border-bottom: 1px solid var(--hairline);
-  flex: 0 0 auto;
-}
-#sysinfo-row, #health-bar, #status-row, footer { flex: 0 0 auto; }
+/* Wordmark + range nav buttons */
 header h1 {
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -44,33 +22,19 @@ header nav button.active {
   border-color: var(--ok); background: var(--hover); color: var(--ok); font-weight: 600;
 }
 
-#sysinfo-row {
-  display: flex; gap: 24px; flex-wrap: wrap;
-  padding: 8px 20px;
-  font-size: 12px;
-  background: var(--bg);
-  font-variant-numeric: tabular-nums;
-  border-bottom: 1px solid var(--hairline);
-}
+/* Sysinfo strip */
+#sysinfo-row { font-size: 12px; background: var(--bg); font-variant-numeric: tabular-nums; }
 #sysinfo-row .item { white-space: nowrap; }
 #sysinfo-row .label { color: var(--muted); margin-right: 6px; }
 
-#health-bar {
-  padding: 6px 20px;
-  font-size: 12px; font-weight: 600;
-  display: flex; align-items: center; gap: 8px;
-  border-bottom: 1px solid var(--hairline);
-}
+/* Health bar */
+#health-bar { font-size: 12px; font-weight: 600; }
 #health-bar[data-state="ok"]   { color: var(--ok); }
 #health-bar[data-state="warn"] { color: var(--warn); }
 #health-bar[data-state="crit"] { color: var(--crit); }
 .health-dot { font-size: 14px; line-height: 1; }
 
-#status-row {
-  display: flex; gap: 8px; flex-wrap: wrap;
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--hairline);
-}
+/* Status pills */
 .status-pill {
   padding: 2px 8px; border-radius: 12px; background: var(--panel);
   font-size: 12px; min-width: 12ch; text-align: center;
@@ -80,46 +44,7 @@ header nav button.active {
 .status-pill.warn { color: var(--warn); }
 .status-pill.crit { color: var(--crit); }
 
-/* Mobile-first: charts above, events panel below. Page scrolls naturally. */
-main {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: auto auto;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-#charts { padding: 12px; min-width: 0; }
-aside#events-panel { padding: 12px; border-top: 1px solid var(--hairline); }
-
-#chart-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 16px;
-}
-/* Latency + loss benefit from horizontal space — let them span every column. */
-#latency-card, #loss-card { grid-column: 1 / -1; }
-
-/* Desktop: side-by-side with internal scroll so the chrome stays put. */
-@media (min-width: 960px) {
-  main {
-    grid-template-columns: 1fr minmax(380px, 30vw);
-    grid-template-rows: 1fr;
-    overflow: hidden;
-  }
-  #charts { overflow-y: auto; padding: 16px; }
-  aside#events-panel {
-    overflow-y: auto;
-    border-top: none;
-    border-left: 1px solid var(--hairline);
-    padding: 16px;
-  }
-}
-
-/* On very narrow viewports the range nav wraps to its own row. */
-@media (max-width: 600px) {
-  header nav { width: 100%; justify-content: flex-start; }
-}
-
+/* Chart cards */
 .chart-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -138,9 +63,13 @@ aside#events-panel { padding: 12px; border-top: 1px solid var(--hairline); }
   pointer-events: none;
 }
 
-aside#events-panel h2 { margin: 0 0 8px 0; font-size: 13px; font-weight: 600; opacity: 0.85; letter-spacing: 0.02em; text-transform: uppercase; }
+/* Events list */
+aside#events-panel h2 {
+  margin: 0 0 8px 0;
+  font-size: 13px; font-weight: 600; opacity: 0.85;
+  letter-spacing: 0.02em; text-transform: uppercase;
+}
 #events-list { list-style: none; padding: 0; margin: 0; font-variant-numeric: tabular-nums; }
-
 .event-item {
   display: flex; gap: 8px; align-items: flex-start;
   padding: 6px 0;
@@ -171,13 +100,8 @@ aside#events-panel h2 { margin: 0 0 8px 0; font-size: 13px; font-weight: 600; op
   font-variant-numeric: tabular-nums;
 }
 
-footer {
-  display: flex; align-items: center; gap: 16px;
-  padding: 10px 20px;
-  border-top: 1px solid var(--hairline);
-  font-size: 12px;
-}
-.footer-spacer { flex: 1; }
+/* Footer */
+footer { font-size: 12px; }
 #export-csv {
   display: inline-block;
   background: var(--panel); color: var(--fg);
@@ -190,6 +114,7 @@ footer {
 #export-csv:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 #export-hint { opacity: 0.55; }
 
+/* WS connection pill */
 #ws-status.ws-pill {
   padding: 2px 8px; border-radius: 10px;
   font-size: 11px; font-weight: 600; letter-spacing: 0.03em;

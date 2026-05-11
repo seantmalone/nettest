@@ -1,0 +1,10 @@
+:root {
+  --ok: #3ecf8e; --warn: #eab308; --crit: #ef4444;
+  --bg: #0d1117; --fg: #e6edf3; --panel: #161b22;
+  --border: #2d333b; --hover: #1f242c;
+  --focus: #58a6ff;
+  --muted: rgba(230, 237, 243, 0.55);
+  --hairline: rgba(255, 255, 255, 0.1);
+  --card-bg: rgba(255, 255, 255, 0.025);
+  --card-border: rgba(255, 255, 255, 0.07);
+}
