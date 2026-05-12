@@ -35,7 +35,12 @@ class DetailScreen(ModalScreen[None]):
             f"Last:     {format_ms(snap.last_ms)}",
             (
                 f"p50/p95/p99 ms: {format_ms(snap.p50_ms, with_unit=False)}"
-                f" / {format_ms(snap.p95_ms, with_unit=False)} / —"
+                f" / {format_ms(snap.p95_ms, with_unit=False)}"
+                f" / {format_ms(snap.p99_ms, with_unit=False)}"
+            ),
+            (
+                f"min/max ms:     {format_ms(snap.min_ms, with_unit=False)}"
+                f" / {format_ms(snap.max_ms, with_unit=False)}"
             ),
             f"Loss:     {snap.loss_pct:.2f}%",
             f"Spark:    {sparkline_string(snap.sparkline)}",
@@ -158,7 +163,8 @@ def _snap_to_dict(agg: TargetAggregator) -> dict[str, Any]:
     s = agg.snapshot()
     return {
         "count": s.count, "last_ms": s.last_ms,
-        "p50_ms": s.p50_ms, "p95_ms": s.p95_ms,
+        "p50_ms": s.p50_ms, "p95_ms": s.p95_ms, "p99_ms": s.p99_ms,
+        "min_ms": s.min_ms, "max_ms": s.max_ms,
         "loss_pct": s.loss_pct, "last_ok": s.last_ok,
         "sparkline": s.sparkline,
     }

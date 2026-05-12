@@ -5,7 +5,9 @@ from typing import Literal
 
 from nettest.config import ProbeThreshold
 
-Severity = Literal["ok", "warn", "crit"]
+# TUI status severity. Matches `Event.severity` for the "bad" levels (warn,
+# critical); `ok` is the health-status counterpart to event-severity `info`.
+Severity = Literal["ok", "warn", "critical"]
 
 ICONS: dict[str, str] = {
     "ping":         "\U000F04D5",
@@ -27,10 +29,12 @@ ASCII_ICONS: dict[str, str] = {
 }
 
 COLORS = {
-    "ok":   "#3ecf8e",
-    "warn": "#f5c344",
-    "crit": "#e5484d",
+    "ok":       "#3ecf8e",
+    "warn":     "#f5c344",
+    "critical": "#e5484d",
 }
+
+SEVERITY_RANK: dict[str, int] = {"ok": 0, "warn": 1, "critical": 2}
 
 _BARS = " ▁▂▃▄▅▆▇█"
 
@@ -56,9 +60,9 @@ def classify_probe(
     *, loss_pct: float, p95_ms: float | None, th: ProbeThreshold,
 ) -> Severity:
     if loss_pct >= th.crit_loss_pct:
-        return "crit"
+        return "critical"
     if p95_ms is not None and p95_ms >= th.crit_p95_ms:
-        return "crit"
+        return "critical"
     if loss_pct >= th.warn_loss_pct:
         return "warn"
     if p95_ms is not None and p95_ms >= th.warn_p95_ms:

@@ -33,8 +33,11 @@ class _Pausable(Protocol):
 _SEVERITY_DOT = {
     "ok": "[#3ecf8e]●[/]",
     "warn": "[#f5c344]●[/]",
-    "crit": "[#e5484d]●[/]",
+    "critical": "[#e5484d]●[/]",
 }
+
+# Event severity (info/warn/critical) -> status severity dot (ok/warn/critical).
+_EVENT_SEV_TO_STATUS = {"info": "ok", "warn": "warn", "critical": "critical"}
 
 
 class NettestApp(App[None]):
@@ -89,11 +92,12 @@ class NettestApp(App[None]):
         self._is_quitting = False
         self._paused = False
         self._started_at = datetime.now(UTC)
+        self._consume_task: asyncio.Task[None] | None = None
         events.subscribe(self._on_event)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield Static(f"  nettest · {self._hostname}", id="banner")
+        yield Static(self._render_banner(), id="banner")
         yield Container(Static("gathering system info...", id="sysinfo_text"), id="sysinfo")
         yield Container(Static("loading...", id="health_text"), id="health")
         with Horizontal():
@@ -136,6 +140,14 @@ class NettestApp(App[None]):
             return "●"
         return _SEVERITY_DOT.get(severity, "●")
 
+    def _render_banner(self) -> str:
+        bits = [f"  nettest · {self._hostname}"]
+        if self._paused:
+            # Escape the square brackets so Rich renders them literally
+            # rather than treating `[PAUSED]` as an unknown style tag.
+            bits.append(r"[reverse #f5c344] \[PAUSED] [/]")
+        return "  ".join(bits)
+
     def _format_sysinfo(self, info: SysInfo) -> str:
         def _f(v: object | None) -> str:
             return "—" if v is None or v == "" else str(v)
@@ -156,6 +168,12 @@ class NettestApp(App[None]):
             self.query_one("#sysinfo_text", Static).update(
                 self._format_sysinfo(self._sysinfo.snapshot()),
             )
+
+        # When paused, freeze health/table so the operator sees that pause
+        # actually took effect — the consume task may still drain queued
+        # results into aggregators, but the visible state stops moving.
+        if self._paused:
+            return
 
         snaps = {k: v.snapshot() for k, v in self.aggregators.items()}
         rows = compute_health_summary(snaps, thresholds=self._cfg.thresholds)
@@ -194,7 +212,7 @@ class NettestApp(App[None]):
         if self._events:
             ev_text = "\n".join(
                 (
-                    f"  {self._dot('crit' if e.severity == 'critical' else e.severity)}  "
+                    f"  {self._dot(_EVENT_SEV_TO_STATUS.get(e.severity, 'warn'))}  "
                     f"{e.ts_end.strftime('%H:%M:%S')}  "
                     f"{rich_escape(e.kind)}: {rich_escape(e.summary)}"
                 )
@@ -206,16 +224,24 @@ class NettestApp(App[None]):
 
     async def action_quit(self) -> None:
         self._is_quitting = True
+        if self._consume_task is not None and not self._consume_task.done():
+            self._consume_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._consume_task
+        if self._scheduler is not None:
+            with contextlib.suppress(Exception):
+                self._scheduler.pause()
         self.exit()
 
     def action_toggle_pause(self) -> None:
         self._paused = not self._paused
-        if self._scheduler is None:
-            return
-        if self._paused:
-            self._scheduler.pause()
-        else:
-            self._scheduler.resume()
+        if self._scheduler is not None:
+            if self._paused:
+                self._scheduler.pause()
+            else:
+                self._scheduler.resume()
+        with contextlib.suppress(Exception):
+            self.query_one("#banner", Static).update(self._render_banner())
 
     def action_drill(self) -> None:
         from nettest.tui.detail import DetailScreen

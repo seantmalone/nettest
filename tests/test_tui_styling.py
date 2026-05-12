@@ -1,5 +1,11 @@
 from nettest.config import ProbeThreshold
-from nettest.tui.styling import ICONS, classify_probe, format_ms, sparkline_string
+from nettest.tui.styling import (
+    ICONS,
+    SEVERITY_RANK,
+    classify_probe,
+    format_ms,
+    sparkline_string,
+)
 
 
 def test_format_ms_returns_em_dash_for_none():
@@ -26,8 +32,12 @@ def test_classify_probe_returns_severity():
     th = ProbeThreshold(warn_loss_pct=1, crit_loss_pct=5, warn_p95_ms=50, crit_p95_ms=200)
     assert classify_probe(loss_pct=0, p95_ms=10, th=th) == "ok"
     assert classify_probe(loss_pct=2, p95_ms=10, th=th) == "warn"
-    assert classify_probe(loss_pct=10, p95_ms=10, th=th) == "crit"
-    assert classify_probe(loss_pct=0, p95_ms=300, th=th) == "crit"
+    assert classify_probe(loss_pct=10, p95_ms=10, th=th) == "critical"
+    assert classify_probe(loss_pct=0, p95_ms=300, th=th) == "critical"
+
+
+def test_severity_rank_orders_critical_above_warn():
+    assert SEVERITY_RANK["critical"] > SEVERITY_RANK["warn"] > SEVERITY_RANK["ok"]
 
 
 def test_sparkline_renders_unicode_bars():
