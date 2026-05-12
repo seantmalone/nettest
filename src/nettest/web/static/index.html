@@ -41,7 +41,11 @@
     <section id="charts">
       <div id="chart-grid">
         <div class="chart-card" id="latency-card">
-          <div class="chart-header"><span class="chart-title">Latency over time</span></div>
+          <div class="chart-header">
+            <span class="chart-title">Latency over time</span>
+            <button id="trace-controls-toggle" type="button" aria-expanded="false" aria-controls="trace-controls" title="Show / hide individual traces">Traces</button>
+          </div>
+          <div id="trace-controls" hidden aria-label="Latency trace visibility"></div>
           <div id="latency" class="chart-plot" role="img" aria-label="Latency over time"></div>
         </div>
         <div class="chart-card" id="loss-card">
