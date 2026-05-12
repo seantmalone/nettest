@@ -21,6 +21,9 @@ header nav button:focus-visible { outline: 2px solid var(--focus); outline-offse
 header nav button.active {
   border-color: var(--ok); background: var(--hover); color: var(--ok); font-weight: 600;
 }
+header nav #freeze-btn.active {
+  border-color: var(--warn); color: var(--warn);
+}
 
 /* Sysinfo strip — label dimmed at 11px, value brighter at 12px, so the row
    reads as labeled facts instead of a uniform stripe. */
@@ -28,6 +31,21 @@ header nav button.active {
 #sysinfo-row .item { white-space: nowrap; font-size: 12px; }
 #sysinfo-row .label { color: var(--muted); margin-right: 6px; font-size: 11px; }
 #sysinfo-row .value { color: var(--fg); }
+
+/* REST error banner — full-width strip below the header so a failing
+   /api/status or /api/events surfaces at a glance instead of hiding in
+   the ws-status pill. */
+#rest-error-banner {
+  padding: 8px 20px;
+  background: rgba(239, 68, 68, 0.18);
+  color: var(--crit);
+  font-size: 12px; font-weight: 600;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.4);
+  display: flex; align-items: center; gap: 10px;
+}
+#rest-error-banner[hidden] { display: none; }
+#rest-error-banner .rb-title { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px; }
+#rest-error-banner .rb-detail { opacity: 0.9; font-weight: 500; }
 
 /* Health bar — most important status line on the page, slightly larger
    than other 12px chrome and heavier weight. */
@@ -63,14 +81,42 @@ header nav button.active {
   align-self: center; flex-shrink: 0;
 }
 
-/* Chart cards */
+/* W10: persistent caption advertising the click affordance + W7 Show all
+   button. The button sits on the right and only un-hides when at least
+   one pill is focused. */
+.pill-hint {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 20px 6px;
+  font-size: 11px; color: var(--muted);
+  border-bottom: 1px solid var(--hairline);
+}
+.pill-hint-text { flex: 1; }
+#show-all-btn {
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 4px; cursor: pointer;
+  font: inherit; font-size: 11px;
+}
+#show-all-btn:hover { background: var(--hover); }
+#show-all-btn[hidden] { display: none; }
+
+/* Chart cards. The drop-shadow (W8) gives the card edge a clear boundary
+   on glare-y screens where var(--surface-border) alone fades into the bg. */
 .chart-card {
   background: var(--surface);
   border: 1px solid var(--surface-border);
   border-radius: 8px;
   padding: 16px 16px 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 .chart-card[hidden] { display: none; }
+/* W9: a card whose underlying series is empty drops to a compact size
+   so the dashboard doesn't read as half-empty until probes accumulate.
+   The .chart-card.empty modifier is toggled by render*() functions when
+   a card's series is empty. */
+.chart-card.empty { padding: 10px 16px; }
+.chart-card.empty .chart-plot { display: none; }
+.chart-card.empty .empty-state { padding: 6px 0; }
 .chart-header { margin-bottom: 6px; }
 .chart-title { font-size: 13px; font-weight: 600; opacity: 0.85; letter-spacing: 0.01em; }
 .chart-plot { height: 240px; }
@@ -106,6 +152,7 @@ aside#events-panel h2 {
 #events-list { list-style: none; padding: 0; margin: 0; font-variant-numeric: tabular-nums; }
 .event-item {
   display: flex; gap: 8px; align-items: flex-start;
+  flex-wrap: wrap;
   padding: 6px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -134,6 +181,30 @@ aside#events-panel h2 {
   font-variant-numeric: tabular-nums;
 }
 
+/* W11: expandable details under a grouped event row. The summary line is
+   compact and the inner <ol> indents under it; both keep the parent's
+   tabular-nums for vertical alignment. */
+.ev-occurrences {
+  width: 100%;
+  margin-left: 5.5ch;  /* aligns with the ev-body column above */
+  font-size: 11px;
+  color: var(--muted);
+}
+.ev-occurrences summary {
+  cursor: pointer; padding: 2px 0;
+  list-style-position: outside;
+}
+.ev-occurrences summary:hover { color: var(--fg); }
+.ev-occurrences ol {
+  list-style: none; padding: 4px 0 4px 16px; margin: 0;
+  border-left: 1px solid var(--hairline);
+}
+.ev-occurrences .ev-occ {
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+  display: block;  /* override the flex .event-item base */
+}
+
 /* Footer */
 footer { font-size: 12px; }
 #export-csv {
@@ -156,4 +227,48 @@ footer { font-size: 12px; }
   border: 1px solid var(--border);
 }
 #ws-status.ws-live { color: var(--ok); border-color: rgba(62, 207, 142, 0.4); }
+#ws-status.ws-stale { color: var(--warn); border-color: rgba(234, 179, 8, 0.4); }
 #ws-status.ws-error { color: var(--crit); border-color: rgba(239, 68, 68, 0.4); }
+
+/* W13: Drill-down side panel. Slides in from the right when the operator
+   clicks a latency point. Fixed position so it overlays the page chrome
+   without reflowing charts. Inner content scrolls. */
+#drill-down {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(420px, 90vw);
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 16px rgba(0,0,0,0.5);
+  z-index: 100;
+  display: flex; flex-direction: column;
+  transform: translateX(0);
+  transition: transform 180ms ease;
+}
+#drill-down[hidden] { display: none; }
+#drill-down.drill-hidden { transform: translateX(100%); }
+.drill-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px; font-weight: 600;
+}
+#drill-title { flex: 1; }
+#drill-close {
+  background: transparent; color: var(--fg); border: none;
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+#drill-close:hover { color: var(--crit); }
+#drill-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 12px 14px; font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+#drill-body table { width: 100%; border-collapse: collapse; }
+#drill-body th, #drill-body td {
+  text-align: left; padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+}
+#drill-body th { color: var(--muted); font-weight: 500; font-size: 11px; }
+#drill-body td.col-err { color: var(--crit); }
+#drill-body .drill-empty { color: var(--muted); font-style: italic; padding: 12px 0; }

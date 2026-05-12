@@ -18,16 +18,24 @@
     <span id="ws-status" class="ws-pill">connecting&hellip;</span>
     <nav aria-label="Time range">
       <button data-range="live" class="active" aria-pressed="true" title="Live (1)">Live</button>
+      <button data-range="5m"  aria-pressed="false" title="Last 5 min">5m</button>
+      <button data-range="15m" aria-pressed="false" title="Last 15 min">15m</button>
       <button data-range="1h" aria-pressed="false" title="1h (2)">1h</button>
       <button data-range="24h" aria-pressed="false" title="24h (3)">24h</button>
       <button data-range="7d" aria-pressed="false" title="7d (4)">7d</button>
+      <button id="freeze-btn" type="button" aria-pressed="false" title="Pause live-buffer eviction so the current window stays pinned">Freeze</button>
     </nav>
   </header>
+  <div id="rest-error-banner" role="alert" hidden></div>
   <div id="health-bar" role="status" aria-live="polite" data-state="ok">
     <span class="health-dot" aria-hidden="true">●</span>
     <span class="health-text">Initializing&hellip;</span>
   </div>
   <div id="status-row" aria-live="polite" aria-label="Probe status"></div>
+  <div id="pill-hint" class="pill-hint">
+    <span class="pill-hint-text">Click a pill to isolate &middot; Shift-click to compare &middot; 1/2/3/4 to change range</span>
+    <button id="show-all-btn" type="button" hidden title="Clear focus and show all traces">Show all</button>
+  </div>
   <div id="sysinfo-row" class="sysinfo" aria-label="System info">loading system info&hellip;</div>
   <main>
     <section id="charts">
@@ -40,11 +48,12 @@
           <div class="chart-header"><span class="chart-title">Packet loss % (target × time)</span></div>
           <div id="loss-heatmap" class="chart-plot" role="img" aria-label="Packet loss heatmap by target and time"></div>
         </div>
-        <div class="chart-card" id="http-card">
+        <div class="chart-card empty" id="http-card">
           <div class="chart-header"><span class="chart-title" id="http-title">HTTP timing breakdown</span></div>
+          <p id="http-placeholder" class="empty-state">No HTTP data yet</p>
           <div id="http-timing" class="chart-plot" role="img" aria-label="HTTP timing breakdown"></div>
         </div>
-        <div class="chart-card" id="wifi-card">
+        <div class="chart-card empty" id="wifi-card">
           <div class="chart-header"><span class="chart-title">Wi-Fi signal (dBm)</span></div>
           <p id="wifi-placeholder" class="empty-state">No Wi-Fi data yet</p>
           <div id="wifi" class="chart-plot" role="img" aria-label="Wi-Fi signal strength" hidden></div>
@@ -60,6 +69,13 @@
       <ul id="events-list" aria-live="polite"></ul>
     </aside>
   </main>
+  <aside id="drill-down" aria-label="Probe detail" aria-hidden="true" hidden>
+    <header class="drill-header">
+      <span id="drill-title">Probe detail</span>
+      <button id="drill-close" type="button" aria-label="Close detail panel">&times;</button>
+    </header>
+    <div id="drill-body"></div>
+  </aside>
   <footer>
     <a id="export-csv" href="/api/export.csv">Export CSV</a>
     <span id="export-hint" aria-hidden="true"></span>
