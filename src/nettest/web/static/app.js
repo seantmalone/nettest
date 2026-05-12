@@ -239,9 +239,12 @@
     if (isNew) {
       pill = document.createElement("span");
       pill.dataset.probe = probe;
+      // W10: pill click affordance is otherwise invisible — title attr
+      // makes the behavior discoverable via hover.
+      pill.setAttribute("title", "Click to focus this trace · Shift-click to compare");
       pill.addEventListener("click", (e) => {
         e.stopPropagation();
-        togglePillFocus(k, pill);
+        togglePillFocus(k, pill, e.shiftKey);
       });
       statusRow.appendChild(pill);
       statusPills.set(k, pill);
@@ -255,28 +258,55 @@
   // Latency-chart trace isolation. The focus state lives on pill.dataset.focused
   // and is read by renderLatency() so every re-render preserves it; using
   // Plotly.restyle() alone gets clobbered by the next 1Hz renderAll tick.
-  function focusedPillKey() {
+  //
+  // W7: focus is multi-select (shift-click adds; click on a non-focused pill
+  // replaces; click on the only focused pill toggles it off). The "Show all"
+  // button surfaces whenever at least one pill is focused.
+  function focusedPillKeys() {
+    const out = new Set();
     for (const [k, p] of statusPills.entries()) {
-      if (p.dataset.focused === "true") return k;
+      if (p.dataset.focused === "true") out.add(k);
     }
-    return null;
+    return out;
+  }
+  const showAllBtn = document.getElementById("show-all-btn");
+  function syncShowAll() {
+    if (!showAllBtn) return;
+    const any = Array.from(statusPills.values()).some(p => p.dataset.focused === "true");
+    showAllBtn.hidden = !any;
   }
   function clearTraceFocus() {
     let cleared = false;
     for (const p of statusPills.values()) {
       if (p.dataset.focused === "true") { p.dataset.focused = "false"; cleared = true; }
     }
-    if (cleared) renderLatency();
+    if (cleared) { syncShowAll(); renderLatency(); }
   }
-  function togglePillFocus(k, pill) {
-    if (pill.dataset.focused === "true") { clearTraceFocus(); return; }
-    for (const p of statusPills.values()) p.dataset.focused = "false";
-    pill.dataset.focused = "true";
+  function togglePillFocus(k, pill, additive) {
+    if (additive) {
+      // Shift-click: toggle this pill independently of the others.
+      pill.dataset.focused = pill.dataset.focused === "true" ? "false" : "true";
+    } else {
+      // Plain click: if this is the only focused pill, clear; otherwise
+      // replace the focus set with just this pill.
+      const focused = focusedPillKeys();
+      if (focused.size === 1 && focused.has(k)) {
+        pill.dataset.focused = "false";
+      } else {
+        for (const p of statusPills.values()) p.dataset.focused = "false";
+        pill.dataset.focused = "true";
+      }
+    }
+    syncShowAll();
     renderLatency();
   }
-  // Click anywhere that isn't a pill clears focus.
+  if (showAllBtn) {
+    showAllBtn.addEventListener("click", clearTraceFocus);
+  }
+  // Click anywhere that isn't a pill / show-all clears focus.
   document.addEventListener("click", (e) => {
     if (e.target.closest(".status-pill")) return;
+    if (e.target.closest("#show-all-btn")) return;
     clearTraceFocus();
   });
 
@@ -556,18 +586,22 @@
   ];
 
   function renderLatency() {
-    const focused = focusedPillKey();
-    // Focus dims hidden traces' opacity and (W7) also their legend entries
-    // by name-prefixing with a faded marker — keeps the legend in sync with
-    // what's drawn instead of advertising hidden series.
+    const focused = focusedPillKeys();
+    const focusActive = focused.size > 0;
+    // W7 focus: when at least one pill is focused, hidden traces dim to
+    // 0.15 AND their legend entries get a "·" prefix so the legend reads
+    // as what's drawn rather than advertising hidden series. Plotly has
+    // no real "dim legend item" so we differentiate via the label prefix.
     const traces = Object.entries(liveSeries).map(([name, pts], i) => {
-      const isHidden = focused && name !== focused;
+      const isHidden = focusActive && !focused.has(name);
+      const label = shortLabel(name);
       const t = {
         x: pts.map(p => p.ts), y: pts.map(p => p.duration_ms),
-        name: shortLabel(name), mode: "lines", type: "scattergl",
+        name: isHidden ? `· ${label}` : label,
+        mode: "lines", type: "scattergl",
         line: { color: LINE_COLORS[i % LINE_COLORS.length], width: 1.5 },
       };
-      if (focused) t.opacity = isHidden ? 0.15 : 1;
+      if (focusActive) t.opacity = isHidden ? 0.15 : 1;
       return t;
     });
     // W4/W14: pin the live x-axis to a 5-minute rolling window so:
@@ -587,8 +621,87 @@
       xaxis,
       legend: { orientation: "h", y: -0.3, x: 0, xanchor: "left", font: { size: 10 } },
       shapes: LATENCY_REF_SHAPES,
-    }, { displayModeBar: "hover", responsive: true });
+    }, { displayModeBar: "hover", responsive: true }).then(attachLatencyClickHandler);
   }
+
+  // W13: Plotly fires plotly_click on a clicked trace point. We attach the
+  // handler once after the first react() (Plotly clears handlers on every
+  // react, so re-attach is idempotent). The keys() of liveSeries match the
+  // trace index, so we resolve probe/target from curveNumber.
+  let _latencyClickAttached = false;
+  function attachLatencyClickHandler() {
+    const el = document.getElementById("latency");
+    if (!el || _latencyClickAttached) return;
+    _latencyClickAttached = true;
+    el.on("plotly_click", (ev) => {
+      if (!ev || !ev.points || !ev.points.length) return;
+      const pt = ev.points[0];
+      const traceNames = Object.keys(liveSeries);
+      const seriesKey = traceNames[pt.curveNumber];
+      if (!seriesKey) return;
+      const ts = (pt.x instanceof Date) ? pt.x.getTime() : new Date(pt.x).getTime();
+      openDrillDown(seriesKey, ts);
+    });
+  }
+
+  function openDrillDown(seriesKey, tsMs) {
+    const panel = document.getElementById("drill-down");
+    const title = document.getElementById("drill-title");
+    const body = document.getElementById("drill-body");
+    if (!panel || !body) return;
+    const [probe, target] = seriesKey.split(/\/(.+)/);
+    // Pad the query window ±15s around the clicked point so we catch the
+    // exact row even if the timestamp resolution differs slightly.
+    const from = tsMs - 15_000;
+    const to = tsMs + 15_000;
+    if (title) title.textContent = `${pillLabel(seriesKey)} @ ${new Date(tsMs).toLocaleTimeString()}`;
+    body.innerHTML = `<div class="drill-empty">Loading…</div>`;
+    panel.hidden = false;
+    panel.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => panel.classList.remove("drill-hidden"));
+    fetch(`/api/results?probe=${encodeURIComponent(probe)}&target=${encodeURIComponent(target)}&from=${from}&to=${to}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(rows => {
+        if (!rows.length) {
+          body.innerHTML = `<div class="drill-empty">No matching results in ±15s window</div>`;
+          return;
+        }
+        // Pick the row closest to the clicked timestamp.
+        rows.sort((a, b) => Math.abs((a.ts ?? a.ts_bucket) - tsMs) - Math.abs((b.ts ?? b.ts_bucket) - tsMs));
+        const r = rows[0];
+        const metrics = r.metrics || {};
+        const metricsRows = Object.entries(metrics)
+          .map(([k, v]) => `<tr><th>${k}</th><td>${v == null ? "—" : (typeof v === "object" ? JSON.stringify(v) : v)}</td></tr>`)
+          .join("");
+        body.innerHTML = `
+          <table>
+            <tr><th>Probe</th><td>${probe}</td></tr>
+            <tr><th>Target</th><td>${target}</td></tr>
+            <tr><th>Timestamp</th><td>${r.ts != null ? new Date(r.ts).toLocaleString() : new Date(r.ts_bucket).toLocaleString()}</td></tr>
+            <tr><th>OK</th><td>${r.ok != null ? String(!!r.ok) : "—"}</td></tr>
+            <tr><th>Duration</th><td>${r.duration_ms != null ? fmtMs(r.duration_ms) : "—"}</td></tr>
+            ${r.error ? `<tr><th>Error</th><td class="col-err">${escapeHtml(r.error)}</td></tr>` : ""}
+            ${metricsRows ? `<tr><th colspan="2" style="padding-top:10px">Metrics</th></tr>${metricsRows}` : ""}
+          </table>
+        `;
+      })
+      .catch(err => { body.innerHTML = `<div class="drill-empty">Error: ${escapeHtml(err.message)}</div>`; });
+  }
+  function closeDrillDown() {
+    const panel = document.getElementById("drill-down");
+    if (!panel) return;
+    panel.classList.add("drill-hidden");
+    panel.setAttribute("aria-hidden", "true");
+    setTimeout(() => { panel.hidden = true; }, 200);
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  document.getElementById("drill-close")?.addEventListener("click", closeDrillDown);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDrillDown();
+  });
 
   function renderLossHeatmap() {
     const targets = Object.keys(liveSeries).sort();
@@ -780,6 +893,13 @@
     return d.toLocaleTimeString();
   }
 
+  // Absolute HH:MM:SS clock format — used for the grouped-event first–last
+  // span where relative timestamps would be ambiguous.
+  function fmtEventClock(ts) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
   // Normalize backend severity ("critical") to badge class ("crit").
   function badgeClass(sev) {
     if (sev === "critical") return "crit";
@@ -790,8 +910,9 @@
   // representative with a count. Backend events don't carry an explicit
   // target field — the ?? '' makes the key resolve to kind|severity| so
   // a burst of latency_spike warns groups regardless of probe target.
-  // The group adopts the LATEST occurrence's ts_end + summary so the
-  // displayed time is "just now" rather than the oldest in the burst.
+  // W11: track both first-seen (_ts_first) and the full list of
+  // occurrences (_items) so the collapsed row shows "first–last (×N)"
+  // and the operator can expand to see individual events.
   function groupEvents(events) {
     const out = [];
     for (const ev of events) {
@@ -799,10 +920,11 @@
       const prev = out[out.length - 1];
       if (prev && prev._key === k) {
         prev._count = (prev._count || 1) + 1;
+        prev._items.push(ev);
         prev.ts_end = ev.ts_end;
         prev.summary = ev.summary;
       } else {
-        out.push({ ...ev, _key: k, _count: 1 });
+        out.push({ ...ev, _key: k, _count: 1, _ts_first: ev.ts_end, _items: [ev] });
       }
     }
     return out;
@@ -836,7 +958,11 @@
 
           const time = document.createElement("span");
           time.className = "ev-time";
-          time.textContent = fmtEventTime(e.ts_end);
+          // W11: when grouped, show first–last span instead of just last.
+          // Single events keep the relative "just now" / "Nm ago" form.
+          time.textContent = e._count > 1
+            ? `${fmtEventClock(e._ts_first)}–${fmtEventClock(e.ts_end)}`
+            : fmtEventTime(e.ts_end);
 
           const badge = document.createElement("span");
           badge.className = `ev-badge ${sev}`;
@@ -852,6 +978,25 @@
             count.className = "ev-count";
             count.textContent = `×${e._count}`;
             li.appendChild(count);
+          }
+          // W11: when more than one occurrence, render a <details> below
+          // the row that, when expanded, lists each occurrence with its
+          // own timestamp and summary so the operator can audit the burst.
+          if (e._count > 1) {
+            const det = document.createElement("details");
+            det.className = "ev-occurrences";
+            const sum = document.createElement("summary");
+            sum.textContent = `${e._count} occurrences`;
+            det.appendChild(sum);
+            const ol = document.createElement("ol");
+            for (const occ of e._items) {
+              const oi = document.createElement("li");
+              oi.className = "ev-occ";
+              oi.textContent = `${fmtEventClock(occ.ts_end)}  ${occ.summary}`;
+              ol.appendChild(oi);
+            }
+            det.appendChild(ol);
+            li.appendChild(det);
           }
           eventsList.appendChild(li);
         }

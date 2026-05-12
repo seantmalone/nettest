@@ -32,6 +32,10 @@
     <span class="health-text">Initializing&hellip;</span>
   </div>
   <div id="status-row" aria-live="polite" aria-label="Probe status"></div>
+  <div id="pill-hint" class="pill-hint">
+    <span class="pill-hint-text">Click a pill to isolate &middot; Shift-click to compare &middot; 1/2/3/4 to change range</span>
+    <button id="show-all-btn" type="button" hidden title="Clear focus and show all traces">Show all</button>
+  </div>
   <div id="sysinfo-row" class="sysinfo" aria-label="System info">loading system info&hellip;</div>
   <main>
     <section id="charts">
@@ -64,6 +68,13 @@
       <ul id="events-list" aria-live="polite"></ul>
     </aside>
   </main>
+  <aside id="drill-down" aria-label="Probe detail" aria-hidden="true" hidden>
+    <header class="drill-header">
+      <span id="drill-title">Probe detail</span>
+      <button id="drill-close" type="button" aria-label="Close detail panel">&times;</button>
+    </header>
+    <div id="drill-body"></div>
+  </aside>
   <footer>
     <a id="export-csv" href="/api/export.csv">Export CSV</a>
     <span id="export-hint" aria-hidden="true"></span>
