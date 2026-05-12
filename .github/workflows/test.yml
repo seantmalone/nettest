@@ -31,13 +31,11 @@ jobs:
           mypy src/nettest
       - name: Test (fast suite)
         run: |
-          pytest -q -m "not slow and not wifi"
+          pytest -q -m "not slow"
       # Slow integration tests skip Windows because they spin up local
       # subprocesses (HTTP/DNS servers, ping subprocess assertions) whose
       # shell quoting and signal semantics differ enough on Windows runners
-      # that flakes outweigh signal. Windows-specific behavior is exercised
-      # by unit tests at the parser level (e.g., parse_tracert_output,
-      # parse_netsh_output) which DO run on the Windows matrix entry.
+      # that flakes outweigh signal.
       - name: Slow integration tests
         if: matrix.os != 'windows-latest'
         run: |

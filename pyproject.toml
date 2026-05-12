@@ -50,7 +50,6 @@ asyncio_mode = "auto"
 addopts = "-ra --strict-markers"
 markers = [
     "slow: integration tests that hit local services",
-    "wifi: tests that require a wireless interface",
 ]
 
 [tool.ruff]
