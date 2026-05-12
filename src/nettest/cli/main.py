@@ -120,6 +120,7 @@ class Runtime:
                 theme=self.cfg.ui.tui.theme,
                 sysinfo=self.sysinfo,
                 web_url=web_url,
+                snapshot_redact=self.cfg.ui.tui.snapshot_redact,
             )
             tui_task = asyncio.create_task(tui.run_async(), name="tui")
             tasks.append(tui_task)

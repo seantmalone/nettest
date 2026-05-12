@@ -88,6 +88,24 @@ async def test_ascii_flag_uses_ascii_icons():
     assert app._icons["ping"].startswith("[")
 
 
+async def test_severity_filter_cycles_through_settings():
+    cfg = Config()
+    bus = ResultBus()
+    eb = EventBroadcast()
+    app = NettestApp(bus=bus, cfg=cfg, hostname="h", events=eb)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # Force a known starting point — the dotfile may persist state
+        # across test runs on a developer machine.
+        app._severity_filter = "all"
+        app.action_cycle_severity_filter()
+        assert app._severity_filter == "warn"
+        app.action_cycle_severity_filter()
+        assert app._severity_filter == "critical"
+        app.action_cycle_severity_filter()
+        assert app._severity_filter == "all"
+
+
 async def test_pause_toggles_banner_and_freezes_refresh():
     cfg = Config()
     bus = ResultBus()
