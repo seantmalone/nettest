@@ -226,6 +226,9 @@ class TuiUi(_Strict):
     beep_on: str = "none"
     no_color: bool = False
     ascii: bool = False
+    # Scrub identifying fields (public IP, BSSID, SSID) from saved snapshots.
+    # Useful when attaching a snapshot to a bug report or ticket.
+    snapshot_redact: bool = False
 
 
 class WebUi(_Strict):

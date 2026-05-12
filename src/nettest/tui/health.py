@@ -1,13 +1,44 @@
 """Compute high-level health categories from per-target snapshots."""
 from __future__ import annotations
 
+import ipaddress
+import re
 from dataclasses import dataclass
 from typing import Literal
 
 from nettest.config import ProbeThreshold, Thresholds
 from nettest.tui.aggregator import TargetSnapshot
 
-Severity = Literal["ok", "warn", "crit"]
+Severity = Literal["ok", "warn", "critical"]
+
+# `host:` / `ping:` etc prefixes that target labels sometimes carry.
+_LABEL_PREFIX = re.compile(r"^[a-z_]+:")
+
+
+def _extract_host(target: str) -> str:
+    """Strip kind-prefix (e.g. ``host:10.0.0.1`` -> ``10.0.0.1``)."""
+    return _LABEL_PREFIX.sub("", target).strip()
+
+
+def is_lan_target(target: str) -> bool:
+    """Classify a ping target as LAN (private/loopback/link-local) vs Internet.
+
+    Prefer parsing the target as an IP and using RFC 1918 / link-local /
+    loopback ranges — the gateway is the canonical LAN target but it is
+    often configured as a bare IP (e.g. ``10.200.0.1``), which the old
+    substring match on ``"gateway"`` misclassified as Internet. Fall back
+    to the substring heuristic for hostname targets that aren't bare IPs.
+    """
+    host = _extract_host(target)
+    if "/" in host:
+        host = host.split("/", 1)[0]
+    if host.count(":") == 1 and "." in host:
+        host = host.split(":", 1)[0]
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return "gateway" in target.lower()
+    return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
 @dataclass(slots=True)
@@ -26,8 +57,8 @@ def _worst(
     worst_loss = 0.0
     for s in snaps:
         if s.loss_pct >= th.crit_loss_pct:
-            sev = "crit"
-        elif s.loss_pct >= th.warn_loss_pct and sev != "crit":
+            sev = "critical"
+        elif s.loss_pct >= th.warn_loss_pct and sev != "critical":
             sev = "warn"
         worst_loss = max(worst_loss, s.loss_pct)
     return sev, worst_loss
@@ -45,7 +76,7 @@ def compute_health_summary(
     rows: list[HealthRow] = []
 
     lan_snaps = [
-        s for (p, t), s in snaps.items() if p == "ping" and "gateway" in t.lower()
+        s for (p, t), s in snaps.items() if p == "ping" and is_lan_target(t)
     ]
     sev, loss = _worst(lan_snaps, th.ping)
     rows.append(HealthRow(
@@ -54,7 +85,7 @@ def compute_health_summary(
     ))
 
     inet_snaps = [
-        s for (p, t), s in snaps.items() if p == "ping" and "gateway" not in t.lower()
+        s for (p, t), s in snaps.items() if p == "ping" and not is_lan_target(t)
     ]
     sev, loss = _worst(inet_snaps, th.ping)
     rows.append(HealthRow(
