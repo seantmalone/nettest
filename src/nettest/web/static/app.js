@@ -166,6 +166,7 @@
     if (currentRange !== "live") return;
     const k = key(r.probe, r.target);
     const series = liveSeries[k] || (liveSeries[k] = []);
+    if (series.length === 0) traceVisibility.onNewKey(k);
     series.push({
       ts: new Date(r.ts),
       duration_ms: r.duration_ms,
@@ -177,6 +178,102 @@
     if (series.length > MAX_LIVE_POINTS) series.shift();
     dirtyKeys.add(k);
   }
+
+  // Per-trace show/hide system. Hidden traces still collect points in
+  // liveSeries (so toggling back on shows accumulated history); only the
+  // Plotly draw is suppressed via visible: 'legendonly'.
+  //
+  // Defaults: on first appearance of a new key, the first key seen for its
+  // visibility-group becomes visible; subsequent keys in the same group
+  // default to hidden. This keeps the chart legible when the operator
+  // has a dozen DNS targets without forcing them to un-tick eleven of them.
+  //
+  // Persistence: sessionStorage keyed by series key so the choice survives
+  // a range switch (Live → 1h → back to Live re-builds liveSeries from
+  // scratch and re-applies stored visibility before the first render).
+  //
+  // visibility group: shortLabel(name).split("·")[0] — so dns_cached and
+  // dns_uncached are distinct groups ("dns" vs "udns"), matching how the
+  // pill labels read.
+  const traceVisibility = (() => {
+    const STORAGE_KEY = "nettest.traceVisible.v1";
+    const map = new Map();           // seriesKey -> bool
+    const groupSeenFirst = new Map(); // visGroup -> seriesKey (first-shown anchor)
+    let onChange = null;
+
+    function visGroup(seriesKey) {
+      const s = shortLabel(seriesKey);
+      const i = s.indexOf("·");
+      return i === -1 ? s : s.slice(0, i);
+    }
+
+    function load() {
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        for (const [k, v] of Object.entries(obj)) {
+          map.set(k, !!v);
+          // Whichever stored key resolves to visible counts as the "anchor"
+          // for its group — keeps the default semantics consistent if a
+          // never-before-seen key appears later in this session.
+          if (v) {
+            const g = visGroup(k);
+            if (!groupSeenFirst.has(g)) groupSeenFirst.set(g, k);
+          }
+        }
+      } catch { /* sessionStorage may be unavailable; default to in-memory only */ }
+    }
+
+    function save() {
+      try {
+        const obj = Object.fromEntries(map);
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+      } catch { /* ignore */ }
+    }
+
+    function onNewKey(k) {
+      if (map.has(k)) return;
+      const g = visGroup(k);
+      if (!groupSeenFirst.has(g)) {
+        groupSeenFirst.set(g, k);
+        map.set(k, true);   // first in its group -> visible
+      } else {
+        map.set(k, false);  // additional members default hidden
+      }
+      save();
+      if (onChange) onChange();
+    }
+
+    function isVisible(k) {
+      // Unknown keys default to visible (covers the case where renderLatency
+      // runs before onNewKey, e.g. ranged-mode bulk load).
+      return map.has(k) ? map.get(k) : true;
+    }
+
+    function setVisible(k, v) {
+      const next = !!v;
+      if (map.get(k) === next) return false;
+      map.set(k, next);
+      // If this is the new "first visible" for its group, remember it so
+      // future arrivals default to hidden.
+      if (next) {
+        const g = visGroup(k);
+        if (!groupSeenFirst.has(g)) groupSeenFirst.set(g, k);
+      }
+      save();
+      if (onChange) onChange();
+      return true;
+    }
+
+    function setOnChange(fn) { onChange = fn; }
+    function visGroupOf(k) { return visGroup(k); }
+    function clearAnchorForGroup(g) { groupSeenFirst.delete(g); }
+    function knownKeys() { return new Set(map.keys()); }
+
+    return { load, onNewKey, isVisible, setVisible, setOnChange, visGroupOf, clearAnchorForGroup, knownKeys };
+  })();
+  traceVisibility.load();
 
   function setPillContent(pill, text, severity) {
     if (pill.dataset.text !== text) {
@@ -455,7 +552,11 @@
         liveSeries = {};
         for (const row of rows) {
           const k = key(row.probe, row.target);
-          const series = liveSeries[k] || (liveSeries[k] = []);
+          let series = liveSeries[k];
+          if (!series) {
+            series = liveSeries[k] = [];
+            traceVisibility.onNewKey(k);
+          }
           if (row.ts != null) {
             series.push({
               ts: new Date(row.ts),
@@ -524,7 +625,11 @@
         liveSeries = {};
         for (const row of rows) {
           const k = key(row.probe, row.target);
-          const series = liveSeries[k] || (liveSeries[k] = []);
+          let series = liveSeries[k];
+          if (!series) {
+            series = liveSeries[k] = [];
+            traceVisibility.onNewKey(k);
+          }
           const ts = row.ts != null ? new Date(row.ts) : new Date(row.ts_bucket);
           const ok = row.ts != null ? row.ok : (row.ok_count || 0) > 0;
           const dur = row.ts != null ? row.duration_ms : row.p50_ms;
@@ -587,23 +692,35 @@
 
   function renderLatency() {
     const focused = focusedPillKeys();
-    const focusActive = focused.size > 0;
-    // W7 focus: when at least one pill is focused, hidden traces dim to
-    // 0.15 AND their legend entries get a "·" prefix so the legend reads
-    // as what's drawn rather than advertising hidden series. Plotly has
-    // no real "dim legend item" so we differentiate via the label prefix.
-    const traces = Object.entries(liveSeries).map(([name, pts], i) => {
-      const isHidden = focusActive && !focused.has(name);
+    // Per-trace visibility (separate from pill-click focus). Hidden traces
+    // pass visible:'legendonly' so they stay clickable in the Plotly legend
+    // but aren't drawn. Pill-click focus only operates on visible traces.
+    // Track the ordered series-key list on the latency div so checkbox
+    // restyle calls can map a key back to its curveNumber.
+    const entries = Object.entries(liveSeries);
+    const visibleKeys = new Set(entries.filter(([k]) => traceVisibility.isVisible(k)).map(([k]) => k));
+    const focusActiveVisible = new Set(
+      Array.from(focused).filter(k => visibleKeys.has(k))
+    );
+    const focusActive = focusActiveVisible.size > 0;
+    const traces = entries.map(([name, pts], i) => {
+      const visible = traceVisibility.isVisible(name);
+      // Dim only applies to visible non-focused traces. Hidden traces ignore
+      // focus entirely (they're not drawn).
+      const dim = focusActive && visible && !focusActiveVisible.has(name);
       const label = shortLabel(name);
       const t = {
         x: pts.map(p => p.ts), y: pts.map(p => p.duration_ms),
-        name: isHidden ? `· ${label}` : label,
+        name: dim ? `· ${label}` : label,
         mode: "lines", type: "scattergl",
         line: { color: LINE_COLORS[i % LINE_COLORS.length], width: 1.5 },
+        visible: visible ? true : "legendonly",
       };
-      if (focusActive) t.opacity = isHidden ? 0.15 : 1;
+      if (focusActive && visible) t.opacity = dim ? 0.15 : 1;
       return t;
     });
+    const latencyDiv = document.getElementById("latency");
+    if (latencyDiv) latencyDiv.dataset.traceKeys = JSON.stringify(entries.map(([k]) => k));
     // W4/W14: pin the live x-axis to a 5-minute rolling window so:
     //   (a) it lines up better with the loss heatmap (30min) — same order
     //   (b) re-layouts don't happen on every tick (no autorange refit).
@@ -1113,6 +1230,140 @@
     eventsPoller.stop();
     sysinfoPoller.stop();
   }
+
+  // Per-trace show/hide control panel. Rendered as a floating dropdown
+  // anchored top-right of the latency chart card. Each visibility-group
+  // gets a header row with a tristate toggle-all checkbox, then indented
+  // per-target rows. Checking/unchecking calls Plotly.restyle for instant
+  // feedback (no full renderLatency rebuild needed). The traceVisibility
+  // module persists choices to sessionStorage.
+  const traceControlsToggle = document.getElementById("trace-controls-toggle");
+  const traceControlsPanel = document.getElementById("trace-controls");
+
+  function setTraceControlsExpanded(expanded) {
+    if (!traceControlsToggle || !traceControlsPanel) return;
+    traceControlsToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    traceControlsPanel.hidden = !expanded;
+    if (expanded) renderTraceControls();
+  }
+  if (traceControlsToggle) {
+    traceControlsToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = traceControlsToggle.getAttribute("aria-expanded") === "true";
+      setTraceControlsExpanded(!open);
+    });
+  }
+  // Click outside the panel closes it (mirrors the focus-clear pattern).
+  document.addEventListener("click", (e) => {
+    if (!traceControlsPanel || traceControlsPanel.hidden) return;
+    if (e.target.closest("#trace-controls")) return;
+    if (e.target.closest("#trace-controls-toggle")) return;
+    setTraceControlsExpanded(false);
+  });
+
+  function renderTraceControls() {
+    if (!traceControlsPanel || traceControlsPanel.hidden) return;
+    const keys = Object.keys(liveSeries);
+    if (keys.length === 0) {
+      traceControlsPanel.innerHTML = `<div class="tc-empty">No traces yet</div>`;
+      return;
+    }
+    // Bucket keys by visibility group, preserve the order they first appear
+    // in liveSeries (which is insertion order — matches LINE_COLORS index).
+    const groups = new Map(); // visGroup -> { items: [{ key, colorIdx }] }
+    keys.forEach((k, idx) => {
+      const g = traceVisibility.visGroupOf(k);
+      if (!groups.has(g)) groups.set(g, { items: [] });
+      groups.get(g).items.push({ key: k, colorIdx: idx });
+    });
+    const frag = document.createDocumentFragment();
+    for (const [groupName, info] of groups) {
+      const visCount = info.items.filter(it => traceVisibility.isVisible(it.key)).length;
+      const total = info.items.length;
+      const groupEl = document.createElement("div");
+      groupEl.className = "tc-group";
+      groupEl.dataset.group = groupName;
+
+      const hdr = document.createElement("label");
+      hdr.className = "tc-group-header";
+      const hdrBox = document.createElement("input");
+      hdrBox.type = "checkbox";
+      hdrBox.className = "tc-checkbox";
+      hdrBox.checked = visCount === total;
+      hdrBox.indeterminate = visCount > 0 && visCount < total;
+      hdrBox.addEventListener("change", (e) => {
+        const target = e.target.checked;
+        for (const it of info.items) {
+          applyVisibility(it.key, target);
+        }
+        renderTraceControls();
+      });
+      const hdrName = document.createElement("span");
+      hdrName.className = "tc-group-name";
+      hdrName.textContent = groupName;
+      const hdrCount = document.createElement("span");
+      hdrCount.className = "tc-group-count";
+      hdrCount.textContent = `${visCount}/${total}`;
+      hdr.append(hdrBox, hdrName, hdrCount);
+      groupEl.appendChild(hdr);
+
+      for (const it of info.items) {
+        const row = document.createElement("label");
+        row.className = "tc-item";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.className = "tc-checkbox";
+        box.checked = traceVisibility.isVisible(it.key);
+        box.addEventListener("change", (e) => {
+          applyVisibility(it.key, e.target.checked);
+          renderTraceControls();
+        });
+        const color = document.createElement("span");
+        color.className = "tc-color";
+        color.style.background = LINE_COLORS[it.colorIdx % LINE_COLORS.length];
+        const label = document.createElement("span");
+        label.className = "tc-label";
+        // Strip the group prefix (e.g. "dns·") so the indented row reads
+        // as the target only, matching how the operator thinks about it.
+        const short = shortLabel(it.key);
+        const dot = short.indexOf("·");
+        label.textContent = dot === -1 ? short : short.slice(dot + 1);
+        label.title = short;
+        row.append(box, color, label);
+        groupEl.appendChild(row);
+      }
+      frag.appendChild(groupEl);
+    }
+    traceControlsPanel.innerHTML = "";
+    traceControlsPanel.appendChild(frag);
+  }
+
+  // Apply a visibility change: update the state, then issue a targeted
+  // Plotly.restyle for the affected trace index. Avoids the full Plotly.react
+  // tear-down + re-attach that renderLatency() does.
+  function applyVisibility(seriesKey, visible) {
+    if (!traceVisibility.setVisible(seriesKey, visible)) return;
+    const latencyDiv = document.getElementById("latency");
+    if (!latencyDiv) return;
+    const orderRaw = latencyDiv.dataset.traceKeys;
+    if (!orderRaw) return;
+    let order;
+    try { order = JSON.parse(orderRaw); } catch { return; }
+    const idx = order.indexOf(seriesKey);
+    if (idx < 0) return;
+    try {
+      Plotly.restyle("latency", { visible: visible ? true : "legendonly" }, [idx]);
+    } catch {
+      // Plotly element may not be initialized yet — full re-render is fine.
+      renderLatency();
+    }
+  }
+
+  // Re-render the controls panel whenever new keys arrive so newly-seen
+  // probes appear in the list. Cheap: a few DOM rebuilds per session.
+  traceVisibility.setOnChange(() => {
+    if (traceControlsPanel && !traceControlsPanel.hidden) renderTraceControls();
+  });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
