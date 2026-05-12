@@ -81,6 +81,7 @@ class NettestApp(App[None]):
         Binding("e", "toggle_events", "Events"),
         Binding("h", "show_history", "History"),
         Binding("s", "save_snapshot", "Snapshot"),
+        Binding("m", "mark", "Mark"),
         Binding("/", "filter_text", "Filter"),
         Binding("f", "cycle_severity_filter", "Severity"),
         Binding("[", "spark_window_smaller", show=False),
@@ -111,6 +112,7 @@ class NettestApp(App[None]):
         self._cfg = cfg
         self._hostname = hostname
         self._scheduler = scheduler
+        self._event_bus = events
         self._icons = ASCII_ICONS if ascii else ICONS
         self._no_color = no_color
         self._theme_name = theme
@@ -406,6 +408,23 @@ class NettestApp(App[None]):
             redact=self._snapshot_redact,
         )
         self.push_screen(SnapshotSavedScreen(path))
+
+    def action_mark(self) -> None:
+        from nettest.tui.detail import MarkPromptScreen
+        self.push_screen(MarkPromptScreen(), callback=self._on_mark_submitted)
+
+    def _on_mark_submitted(self, text: str | None) -> None:
+        if not text:
+            return
+        now = datetime.now(UTC)
+        ev = Event(
+            ts_start=now, ts_end=now,
+            kind="manual", severity="info",
+            summary=text.strip()[:200],
+        )
+        # Publish through the broadcast so both the TUI events log and the
+        # web events panel pick it up via the same path as detector events.
+        self._event_bus.publish(ev)
 
     def action_filter_text(self) -> None:
         from nettest.tui.detail import FilterPromptScreen

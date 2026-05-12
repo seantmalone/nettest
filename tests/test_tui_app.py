@@ -88,6 +88,21 @@ async def test_ascii_flag_uses_ascii_icons():
     assert app._icons["ping"].startswith("[")
 
 
+async def test_mark_publishes_manual_event():
+    cfg = Config()
+    bus = ResultBus()
+    eb = EventBroadcast()
+    app = NettestApp(bus=bus, cfg=cfg, hostname="h", events=eb)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._on_mark_submitted("started speedtest")
+        await pilot.pause()
+        manuals = [e for e in app._events if e.kind == "manual"]
+        assert len(manuals) == 1
+        assert manuals[0].summary == "started speedtest"
+        assert manuals[0].severity == "info"
+
+
 async def test_severity_filter_cycles_through_settings():
     cfg = Config()
     bus = ResultBus()

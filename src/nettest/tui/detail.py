@@ -122,6 +122,7 @@ class HelpScreen(ModalScreen[None]):
             "  e     Toggle events panel (inline next to the table)\n"
             "  h     History — all probes, full sample window\n"
             "  s     Save JSON snapshot of all aggregates + events\n"
+            "  m     Mark a moment — adds an Event(kind=manual)\n"
             "  /     Filter rows by text (probe or target substring)\n"
             "  f     Cycle severity filter: all → warn+critical → critical\n"
             "  [ / ] Sparkline window smaller / larger (30s / 5m / 15m)\n"
@@ -137,7 +138,7 @@ class HelpScreen(ModalScreen[None]):
             "─────────────────────────────────────────────────────────────\n"
             "  • `d` requires a selected row — move the cursor first.\n"
             "  • Filter persists across sessions in ~/.config/nettest/\n"
-            "  • `/` opens a prompt; submit with Enter, cancel with Esc.\n"
+            "  • `m`/`/` open a prompt; submit with Enter, cancel with Esc.\n"
             "\n"
             "Press Esc to close."
         )
@@ -213,6 +214,11 @@ class _SingleLinePromptScreen(ModalScreen[str | None]):
 class FilterPromptScreen(_SingleLinePromptScreen):
     _title = "Filter rows by text (empty to clear):"
     _placeholder = "probe or target substring"
+
+
+class MarkPromptScreen(_SingleLinePromptScreen):
+    _title = "Mark a moment — short note to insert into the event stream:"
+    _placeholder = "e.g. started speedtest"
 
 
 def write_snapshot(
