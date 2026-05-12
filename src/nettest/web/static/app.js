@@ -17,11 +17,19 @@
 
   let liveSeries = {};
   const MAX_LIVE_POINTS = 1200;
+  // W4: rolling x-axis window for the live latency chart. Picked to roughly
+  // match the loss heatmap's 30-minute window divided by 6 — still gives
+  // enough horizontal density to see per-second twitches but the two
+  // stacked charts are within an order of magnitude of each other.
+  const LIVE_LATENCY_WINDOW_MS = 5 * 60_000;
 
   const statusPills = new Map();
   let currentRange = "live";
-  const RANGE_MS = { "1h": 3_600_000, "24h": 86_400_000, "7d": 7 * 86_400_000 };
+  const RANGE_MS = { "5m": 5 * 60_000, "15m": 15 * 60_000, "1h": 3_600_000, "24h": 86_400_000, "7d": 7 * 86_400_000 };
   const intervals = [];
+  // W6: freeze toggle pauses live-buffer eviction in pushPoint() without
+  // switching away from live mode — so you can pin a moment for triage.
+  let frozen = false;
 
   // Render-skip state. Only chart sections whose contributing keys changed
   // since the last tick get re-drawn — idle ticks become no-ops.
@@ -164,6 +172,8 @@
       ok: r.ok,
       metrics: r.metrics || {},
     });
+    // Cap by point count always, but only evict by time-window when not
+    // frozen — freeze lets the operator pin the moment they're looking at.
     if (series.length > MAX_LIVE_POINTS) series.shift();
     dirtyKeys.add(k);
   }
@@ -369,19 +379,21 @@
       });
   }
 
+  // W12: include both from= and to= so the export exactly matches the
+  // plotted window. Live mode exports the rolling 5-min latency window so
+  // "Export CSV" returns what's actually on screen, not a stale 1h slab.
   function updateExportLink() {
     if (!exportLink) return;
     const now = Date.now();
-    let fromMs;
-    let hintText;
+    let fromMs, toMs = now, hintText;
     if (currentRange === "live") {
-      fromMs = now - 3_600_000;
-      hintText = "last 1h";
+      fromMs = now - LIVE_LATENCY_WINDOW_MS;
+      hintText = `last ${fmtDuration(LIVE_LATENCY_WINDOW_MS)} (live)`;
     } else {
       fromMs = now - RANGE_MS[currentRange];
       hintText = `last ${currentRange}`;
     }
-    exportLink.href = `/api/export.csv?from=${fromMs}`;
+    exportLink.href = `/api/export.csv?from=${fromMs}&to=${toMs}`;
     if (exportHint) exportHint.textContent = `(${hintText})`;
   }
 
@@ -443,6 +455,60 @@
     });
   }
 
+  // W6: Freeze button — pauses the rolling x-axis window so the operator
+  // can pin "the moment things broke" without flipping out of Live. New
+  // results still flow into liveSeries (capped by MAX_LIVE_POINTS) so when
+  // unfreezing the chart re-anchors to "now".
+  const freezeBtn = document.getElementById("freeze-btn");
+  if (freezeBtn) {
+    freezeBtn.addEventListener("click", () => {
+      frozen = !frozen;
+      freezeBtn.classList.toggle("active", frozen);
+      freezeBtn.setAttribute("aria-pressed", frozen ? "true" : "false");
+      freezeBtn.textContent = frozen ? "Frozen" : "Freeze";
+      allDirty = true;
+      renderAll();
+    });
+  }
+
+  // W6: ?from=…&to=… deep-link support. When both are present at load
+  // time we paint that fixed window once via the same /api/results path
+  // setRange uses. The values are integer ms-epoch.
+  function applyDeepLink() {
+    const params = new URLSearchParams(location.search);
+    const fromS = params.get("from");
+    const toS = params.get("to");
+    if (!fromS || !toS) return false;
+    const from = parseInt(fromS, 10), to = parseInt(toS, 10);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return false;
+    currentRange = "custom";
+    if (rangeNav) {
+      rangeNav.querySelectorAll("button").forEach(b => {
+        b.classList.remove("active"); b.setAttribute("aria-pressed", "false");
+      });
+    }
+    fetch(`/api/results?from=${from}&to=${to}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(rows => {
+        clearRestFailure("results");
+        liveSeries = {};
+        for (const row of rows) {
+          const k = key(row.probe, row.target);
+          const series = liveSeries[k] || (liveSeries[k] = []);
+          const ts = row.ts != null ? new Date(row.ts) : new Date(row.ts_bucket);
+          const ok = row.ts != null ? row.ok : (row.ok_count || 0) > 0;
+          const dur = row.ts != null ? row.duration_ms : row.p50_ms;
+          series.push({ ts, duration_ms: dur, ok, metrics: row.metrics || {} });
+        }
+        allDirty = true;
+        renderAll();
+        if (exportHint) exportHint.textContent = `(${new Date(from).toLocaleString()} – ${new Date(to).toLocaleString()})`;
+        if (exportLink) exportLink.href = `/api/export.csv?from=${from}&to=${to}`;
+      })
+      .catch(err => markRestFailure("results", err));
+    return true;
+  }
+
   // Digit keys 1-4 switch range. Skipped while typing into inputs/textareas
   // and when modifier keys are held so browser shortcuts still fire.
   const KEY_TO_RANGE = { "1": "live", "2": "1h", "3": "24h", "4": "7d" };
@@ -491,20 +557,34 @@
 
   function renderLatency() {
     const focused = focusedPillKey();
+    // Focus dims hidden traces' opacity and (W7) also their legend entries
+    // by name-prefixing with a faded marker — keeps the legend in sync with
+    // what's drawn instead of advertising hidden series.
     const traces = Object.entries(liveSeries).map(([name, pts], i) => {
+      const isHidden = focused && name !== focused;
       const t = {
         x: pts.map(p => p.ts), y: pts.map(p => p.duration_ms),
         name: shortLabel(name), mode: "lines", type: "scattergl",
         line: { color: LINE_COLORS[i % LINE_COLORS.length], width: 1.5 },
       };
-      if (focused) t.opacity = name === focused ? 1 : 0.15;
+      if (focused) t.opacity = isHidden ? 0.15 : 1;
       return t;
     });
+    // W4/W14: pin the live x-axis to a 5-minute rolling window so:
+    //   (a) it lines up better with the loss heatmap (30min) — same order
+    //   (b) re-layouts don't happen on every tick (no autorange refit).
+    // Ranged modes (1h / 24h / 7d) keep autorange so historic data fills.
+    const xaxis = { gridcolor: "rgba(255,255,255,0.08)" };
+    if (currentRange === "live" && !frozen) {
+      const now = Date.now();
+      xaxis.range = [new Date(now - LIVE_LATENCY_WINDOW_MS), new Date(now)];
+      xaxis.type = "date";
+    }
     Plotly.react("latency", traces, {
       ...baseLayout,
       margin: { l: 55, r: 10, t: 10, b: 70 },
       yaxis: { type: "log", title: "ms", dtick: 1, gridcolor: "rgba(255,255,255,0.08)" },
-      xaxis: { gridcolor: "rgba(255,255,255,0.08)" },
+      xaxis,
       legend: { orientation: "h", y: -0.3, x: 0, xanchor: "left", font: { size: 10 } },
       shapes: LATENCY_REF_SHAPES,
     }, { displayModeBar: "hover", responsive: true });
@@ -518,6 +598,9 @@
     const buckets = 60;
     const x = [];
     for (let i = 0; i < buckets; i++) x.push(new Date(now - (buckets - i - 1) * bucketMs));
+    // W4: emit null for buckets that have no samples so the heatmap renders
+    // those cells in the layout's plot_bgcolor rather than the colorscale's
+    // zero color — "no signal" is now visually distinct from "0% loss".
     const z = targets.map(t => {
       const pts = liveSeries[t];
       const row = new Array(buckets).fill(0);
@@ -529,18 +612,30 @@
           if (!p.ok) row[idx]++;
         }
       }
-      return row.map((fail, i) => cnt[i] ? (fail / cnt[i]) * 100 : 0);
+      return row.map((fail, i) => cnt[i] ? (fail / cnt[i]) * 100 : null);
     });
     Plotly.react("loss-heatmap",
       // zmax: 10 (not 50) — for this tool, 5% loss is already bad and the
       // top-of-scale should signal "broken" rather than "literally 50%".
       // Any loss >= 10% saturates to full red.
-      [{ x, y: targets.map(heatmapLabel), z, type: "heatmap", colorscale: "Reds", zmin: 0, zmax: 10 }],
+      [{
+        x, y: targets.map(heatmapLabel), z,
+        type: "heatmap", colorscale: "Reds", zmin: 0, zmax: 10,
+        hoverongaps: false,
+      }],
       {
         ...baseLayout,
-        margin: { l: 150, r: 10, t: 10, b: 30 },
+        // W5: automargin lets Plotly size the left gutter to the longest
+        // label rather than truncating at a fixed 150px. We still set a
+        // small explicit margin so the gutter has padding when labels are
+        // short, then automargin will grow as needed.
+        margin: { l: 60, r: 10, t: 10, b: 30 },
+        // Dark grey plot bg so null-data cells (gaps in the heatmap) read
+        // as "no signal", clearly different from the white-ish zero end of
+        // the Reds colorscale that means "healthy".
+        plot_bgcolor: "#1a1f26",
         xaxis: { gridcolor: "rgba(255,255,255,0.08)" },
-        yaxis: { gridcolor: "rgba(255,255,255,0.08)", automargin: false },
+        yaxis: { gridcolor: "rgba(255,255,255,0.08)", automargin: true },
       },
       { displayModeBar: "hover", responsive: true });
   }
@@ -625,7 +720,7 @@
     }, { displayModeBar: false, responsive: true });
   }
 
-  function renderAll() {
+  function renderAllImmediate() {
     const renderEverything = allDirty;
     allDirty = false;
     const hadAnyDirty = renderEverything || dirtyKeys.size > 0;
@@ -647,6 +742,29 @@
     if (httpDirty) renderHttpTiming();
     if (wifiDirty) renderWifi();
     if (streamDirty) renderStream();
+  }
+
+  // W14: coalesce render calls to one every 250ms so high-cadence probes
+  // (10 probes × 1Hz) don't trigger 10 Plotly.react passes per second.
+  // The 1s setInterval still drives idle ticks; this throttle only kicks
+  // in when WS messages stack up between intervals.
+  const RENDER_THROTTLE_MS = 250;
+  let renderTimer = null;
+  let lastRenderTs = 0;
+  function renderAll() {
+    const now = Date.now();
+    const since = now - lastRenderTs;
+    if (since >= RENDER_THROTTLE_MS) {
+      if (renderTimer != null) { clearTimeout(renderTimer); renderTimer = null; }
+      lastRenderTs = now;
+      renderAllImmediate();
+    } else if (renderTimer == null) {
+      renderTimer = setTimeout(() => {
+        renderTimer = null;
+        lastRenderTs = Date.now();
+        renderAllImmediate();
+      }, RENDER_THROTTLE_MS - since);
+    }
   }
 
   function fmtEventTime(ts) {
@@ -849,7 +967,8 @@
     }
   });
 
-  updateExportLink();
+  const deepLinked = applyDeepLink();
+  if (!deepLinked) updateExportLink();
   startIntervals();
   connectWs();
 })();

@@ -18,9 +18,12 @@
     <span id="ws-status" class="ws-pill">connecting&hellip;</span>
     <nav aria-label="Time range">
       <button data-range="live" class="active" aria-pressed="true" title="Live (1)">Live</button>
+      <button data-range="5m"  aria-pressed="false" title="Last 5 min">5m</button>
+      <button data-range="15m" aria-pressed="false" title="Last 15 min">15m</button>
       <button data-range="1h" aria-pressed="false" title="1h (2)">1h</button>
       <button data-range="24h" aria-pressed="false" title="24h (3)">24h</button>
       <button data-range="7d" aria-pressed="false" title="7d (4)">7d</button>
+      <button id="freeze-btn" type="button" aria-pressed="false" title="Pause live-buffer eviction so the current window stays pinned">Freeze</button>
     </nav>
   </header>
   <div id="rest-error-banner" role="alert" hidden></div>

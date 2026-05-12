@@ -21,6 +21,9 @@ header nav button:focus-visible { outline: 2px solid var(--focus); outline-offse
 header nav button.active {
   border-color: var(--ok); background: var(--hover); color: var(--ok); font-weight: 600;
 }
+header nav #freeze-btn.active {
+  border-color: var(--warn); color: var(--warn);
+}
 
 /* Sysinfo strip — label dimmed at 11px, value brighter at 12px, so the row
    reads as labeled facts instead of a uniform stripe. */
