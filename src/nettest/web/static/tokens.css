@@ -10,7 +10,9 @@
   --hairline: rgba(255, 255, 255, 0.1);
 
   /* Elevated surface (chart cards, popovers) — slight white wash over the
-     base bg so the card edge reads even on the darker --bg. */
-  --surface: rgba(255, 255, 255, 0.025);
-  --surface-border: rgba(255, 255, 255, 0.07);
+     base bg so the card edge reads even on the darker --bg. Raised from
+     0.025/0.07 → 0.05/0.14 so the card boundary is legible on a glare-y
+     screen during incident triage. */
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-border: rgba(255, 255, 255, 0.14);
 }

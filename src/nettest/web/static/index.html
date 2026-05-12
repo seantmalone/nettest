@@ -48,11 +48,12 @@
           <div class="chart-header"><span class="chart-title">Packet loss % (target × time)</span></div>
           <div id="loss-heatmap" class="chart-plot" role="img" aria-label="Packet loss heatmap by target and time"></div>
         </div>
-        <div class="chart-card" id="http-card">
+        <div class="chart-card empty" id="http-card">
           <div class="chart-header"><span class="chart-title" id="http-title">HTTP timing breakdown</span></div>
+          <p id="http-placeholder" class="empty-state">No HTTP data yet</p>
           <div id="http-timing" class="chart-plot" role="img" aria-label="HTTP timing breakdown"></div>
         </div>
-        <div class="chart-card" id="wifi-card">
+        <div class="chart-card empty" id="wifi-card">
           <div class="chart-header"><span class="chart-title">Wi-Fi signal (dBm)</span></div>
           <p id="wifi-placeholder" class="empty-state">No Wi-Fi data yet</p>
           <div id="wifi" class="chart-plot" role="img" aria-label="Wi-Fi signal strength" hidden></div>

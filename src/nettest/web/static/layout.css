@@ -74,7 +74,21 @@ footer {
   }
 }
 
-/* On very narrow viewports the range nav wraps to its own row. */
+/* On very narrow viewports the range nav wraps to its own row, and the
+   events panel moves above the charts so the operator's first eyeline
+   on a phone-sized screen is "what just broke" — not the heatmap. */
 @media (max-width: 600px) {
   header nav { width: 100%; justify-content: flex-start; }
+  main { grid-template-rows: auto auto; }
+  /* W15: events panel jumps above #charts via grid order so the operator
+     doesn't have to scroll past five chart cards to see what broke. */
+  aside#events-panel { order: 0; border-top: none; border-bottom: 1px solid var(--hairline); }
+  #charts { order: 1; }
+  /* Sticky condensed health strip at top — always visible while scrolling
+     so the alert state never falls offscreen. */
+  #health-bar {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--bg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
 }

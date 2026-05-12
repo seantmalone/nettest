@@ -754,8 +754,21 @@
   }
 
   function renderHttpTiming() {
+    const httpCard = document.getElementById("http-card");
+    const httpPlot = document.getElementById("http-timing");
+    const httpPlaceholder = document.getElementById("http-placeholder");
     const httpEntries = Object.entries(liveSeries).filter(([k]) => k.startsWith("http/"));
-    if (httpEntries.length === 0) return;
+    // W9: collapse the HTTP card when no data so it doesn't reserve ~287px
+    // of empty real estate.
+    if (httpEntries.length === 0) {
+      if (httpCard) httpCard.classList.add("empty");
+      if (httpPlaceholder) httpPlaceholder.hidden = false;
+      if (httpPlot) httpPlot.hidden = true;
+      return;
+    }
+    if (httpCard) httpCard.classList.remove("empty");
+    if (httpPlaceholder) httpPlaceholder.hidden = true;
+    if (httpPlot) httpPlot.hidden = false;
     const xLabels = httpEntries.map(([k]) => shortLabel(k));
     // Average over a time window rather than a fixed count of results, so the
     // chart compares apples-to-apples across targets with different probe
@@ -793,10 +806,14 @@
     // <p> in place of the chart rather than overlaying text on an empty
     // dark rectangle.
     if (totalPts < 3) {
+      // W9: also collapse the entire card height when there's no data
+      // so empty wifi/http/stream cards don't waste vertical real estate.
+      if (wifiCard) wifiCard.classList.add("empty");
       if (wifiPlaceholder) wifiPlaceholder.hidden = false;
       if (wifiPlot) wifiPlot.hidden = true;
       return;
     }
+    if (wifiCard) wifiCard.classList.remove("empty");
     if (wifiPlaceholder) wifiPlaceholder.hidden = true;
     if (wifiPlot) wifiPlot.hidden = false;
     const traces = wifiEntries.map(([name, pts]) => ({

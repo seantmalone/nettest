@@ -100,14 +100,23 @@ header nav #freeze-btn.active {
 #show-all-btn:hover { background: var(--hover); }
 #show-all-btn[hidden] { display: none; }
 
-/* Chart cards */
+/* Chart cards. The drop-shadow (W8) gives the card edge a clear boundary
+   on glare-y screens where var(--surface-border) alone fades into the bg. */
 .chart-card {
   background: var(--surface);
   border: 1px solid var(--surface-border);
   border-radius: 8px;
   padding: 16px 16px 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 .chart-card[hidden] { display: none; }
+/* W9: a card whose underlying series is empty drops to a compact size
+   so the dashboard doesn't read as half-empty until probes accumulate.
+   The .chart-card.empty modifier is toggled by render*() functions when
+   a card's series is empty. */
+.chart-card.empty { padding: 10px 16px; }
+.chart-card.empty .chart-plot { display: none; }
+.chart-card.empty .empty-state { padding: 6px 0; }
 .chart-header { margin-bottom: 6px; }
 .chart-title { font-size: 13px; font-weight: 600; opacity: 0.85; letter-spacing: 0.01em; }
 .chart-plot { height: 240px; }
