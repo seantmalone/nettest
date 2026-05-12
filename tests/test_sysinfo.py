@@ -25,15 +25,42 @@ async def test_gather_returns_sysinfo_dataclass():
     assert info.wifi_ssid == "MyWiFi"
     assert info.wifi_bssid == "aa:bb:cc:dd:ee:ff"
     assert info.wifi_signal_dbm == -55
+    assert info.wifi_state == "connected"
+    assert info.public_ip_state == "available"
+
+
+async def test_gather_marks_wifi_off_when_no_association_and_radio_off():
+    with (
+        patch.object(sysinfo, "default_route", AsyncMock(return_value=("en0", "10.0.0.1"))),
+        patch.object(sysinfo, "local_ip_for_iface", AsyncMock(return_value="10.0.0.42")),
+        patch.object(sysinfo, "public_ip", AsyncMock(return_value=None)),
+        patch.object(sysinfo, "wifi_info", AsyncMock(return_value=(None, None, None))),
+        patch.object(sysinfo, "is_wifi_likely_available", lambda: False),
+    ):
+        info = await sysinfo.gather()
+    assert info.wifi_state == "off"
+    assert info.public_ip_state == "unavailable"
+
+
+async def test_gather_marks_wifi_not_connected_when_radio_on_but_no_assoc():
+    with (
+        patch.object(sysinfo, "default_route", AsyncMock(return_value=("en0", "10.0.0.1"))),
+        patch.object(sysinfo, "local_ip_for_iface", AsyncMock(return_value="10.0.0.42")),
+        patch.object(sysinfo, "public_ip", AsyncMock(return_value=None)),
+        patch.object(sysinfo, "wifi_info", AsyncMock(return_value=(None, None, None))),
+        patch.object(sysinfo, "is_wifi_likely_available", lambda: True),
+    ):
+        info = await sysinfo.gather()
+    assert info.wifi_state == "not_connected"
 
 
 async def test_sysinfo_to_dict_contains_expected_keys():
     info = SysInfo(wifi_ssid="x", default_iface="en0")
     d = info.to_dict()
     assert set(d.keys()) == {
-        "wifi_ssid", "wifi_bssid", "wifi_signal_dbm",
+        "wifi_ssid", "wifi_bssid", "wifi_signal_dbm", "wifi_state",
         "default_iface", "default_gateway",
-        "local_ip", "public_ip",
+        "local_ip", "public_ip", "public_ip_state",
     }
 
 

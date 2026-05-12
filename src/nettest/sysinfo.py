@@ -13,11 +13,13 @@ import platform
 import re
 import socket
 from dataclasses import asdict, dataclass
+from typing import Literal
 
 import httpx
 
 from nettest.probes.wifi import (
     _iw_dev_interfaces,
+    is_wifi_likely_available,
     parse_airport_output,
     parse_iw_output,
     parse_netsh_output,
@@ -29,16 +31,24 @@ _AIRPORT_PATH = (
     "Versions/Current/Resources/airport"
 )
 
+# State fields let the UI distinguish "we haven't looked yet" (loading) from
+# "we looked and the data isn't available" (off/unavailable) from "we have
+# a real value". An em-dash alone hides that distinction.
+WifiState = Literal["loading", "off", "not_connected", "connected", "unavailable"]
+PublicIpState = Literal["loading", "available", "unavailable"]
+
 
 @dataclass(slots=True)
 class SysInfo:
     wifi_ssid: str | None = None
     wifi_bssid: str | None = None
     wifi_signal_dbm: int | None = None
+    wifi_state: WifiState = "loading"
     default_iface: str | None = None
     default_gateway: str | None = None
     local_ip: str | None = None
     public_ip: str | None = None
+    public_ip_state: PublicIpState = "loading"
 
     def to_dict(self) -> dict[str, object | None]:
         return asdict(self)
@@ -272,12 +282,28 @@ async def gather() -> SysInfo:
     pub = await public_task
     ssid, bssid, rssi = await wifi_task
 
+    wifi_state: WifiState
+    if ssid or bssid or rssi is not None:
+        wifi_state = "connected"
+    elif is_wifi_likely_available():
+        # Adapter is present and on, but we couldn't read an association —
+        # most commonly because we're not joined to a network right now.
+        wifi_state = "not_connected"
+    else:
+        # No adapter, or adapter is powered off. We can't tell those apart
+        # cheaply, so we collapse them under "off".
+        wifi_state = "off"
+
+    public_ip_state: PublicIpState = "available" if pub else "unavailable"
+
     return SysInfo(
         wifi_ssid=ssid,
         wifi_bssid=bssid,
         wifi_signal_dbm=rssi,
+        wifi_state=wifi_state,
         default_iface=iface,
         default_gateway=gw,
         local_ip=local,
         public_ip=pub,
+        public_ip_state=public_ip_state,
     )

@@ -14,7 +14,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
 from textual.reactive import reactive
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.widgets import DataTable, Footer, Header, RichLog, Static
 
 from nettest.bus import ResultBus
 from nettest.config import Config
@@ -52,6 +52,10 @@ _SEVERITY_ROW_STYLE = {
     "critical": "bold red",
 }
 
+_SPARK_WINDOWS_S: tuple[float, ...] = (30.0, 300.0, 900.0)  # 30s / 5m / 15m
+_DEFAULT_SPARK_WINDOW_S = 30.0
+_RETAIN_S = 900.0  # keep enough raw data to render the longest window
+
 _FILTER_DOTFILE = Path.home() / ".config" / "nettest" / "tui_filter.json"
 _SEVERITY_FILTER_CYCLE: tuple[str, ...] = ("all", "warn", "critical")
 _SEVERITY_FILTER_HELP = {
@@ -66,7 +70,7 @@ class NettestApp(App[None]):
     #sysinfo { height: 3; border: solid $accent; padding: 0 1; }
     #health { height: 8; border: solid $accent; padding: 0 1; }
     #targets { border: solid $accent; padding: 0 1; }
-    #events  { border: solid $accent; padding: 0 1; width: 45%; }
+    #events  { border: solid $accent; padding: 0 1; display: none; }
     #weblink { height: 1; padding: 0 1; color: $accent; }
     """
 
@@ -74,11 +78,13 @@ class NettestApp(App[None]):
         Binding("q", "quit", "Quit"),
         Binding("p", "toggle_pause", "Pause/Resume"),
         Binding("d", "drill", "Detail"),
-        Binding("e", "show_events", "Events"),
+        Binding("e", "toggle_events", "Events"),
         Binding("h", "show_history", "History"),
         Binding("s", "save_snapshot", "Snapshot"),
         Binding("/", "filter_text", "Filter"),
         Binding("f", "cycle_severity_filter", "Severity"),
+        Binding("[", "spark_window_smaller", show=False),
+        Binding("]", "spark_window_larger", show=False),
         Binding("?", "show_help", "Help"),
     ]
 
@@ -121,6 +127,8 @@ class NettestApp(App[None]):
         self._text_filter = ""
         self._severity_filter = "all"
         self._load_filter_state()
+        self._spark_window_s = _DEFAULT_SPARK_WINDOW_S
+        self._events_visible = False
         events.subscribe(self._on_event)
 
     def compose(self) -> ComposeResult:
@@ -128,9 +136,9 @@ class NettestApp(App[None]):
         yield Static(self._render_banner(), id="banner")
         yield Container(Static("gathering system info...", id="sysinfo_text"), id="sysinfo")
         yield Container(Static("loading...", id="health_text"), id="health")
-        with Horizontal():
+        with Horizontal(id="main"):
             yield DataTable(id="targets")
-            yield Container(Static("(events)", id="events_text"), id="events")
+            yield Container(RichLog(id="events_log", wrap=True, markup=True), id="events")
         if self._web_url:
             yield Static(f"  Web UI: {self._web_url}", id="weblink")
         yield Footer()
@@ -157,12 +165,30 @@ class NettestApp(App[None]):
                 self.total_fails += 1
             agg = self.aggregators.setdefault(
                 (r.probe, r.target),
-                TargetAggregator(window_s=30, sparkline_buckets=12),
+                TargetAggregator(
+                    window_s=_DEFAULT_SPARK_WINDOW_S,
+                    sparkline_buckets=24,
+                    retain_s=_RETAIN_S,
+                ),
             )
             agg.record(r)
 
     def _on_event(self, event: Event) -> None:
         self._events.append(event)
+        if not self._is_quitting:
+            with contextlib.suppress(Exception):
+                self._append_event_log(event)
+
+    def _append_event_log(self, event: Event) -> None:
+        try:
+            log = self.query_one("#events_log", RichLog)
+        except Exception:  # noqa: BLE001
+            return
+        status_sev = _EVENT_SEV_TO_STATUS.get(event.severity, "warn")
+        log.write(
+            f"{self._dot(status_sev)}  {event.ts_end.strftime('%H:%M:%S')}  "
+            f"{rich_escape(event.kind)}: {rich_escape(event.summary)}"
+        )
 
     def _dot(self, severity: str) -> str:
         if self._no_color:
@@ -177,19 +203,38 @@ class NettestApp(App[None]):
             bits.append(r"[reverse #f5c344] \[PAUSED] [/]")
         return "  ".join(bits)
 
+    def _wifi_part(self, info: SysInfo) -> str:
+        state = info.wifi_state
+        if state == "loading":
+            return "…"
+        if state == "off":
+            return "off"
+        if state == "not_connected":
+            return "not connected"
+        if state == "unavailable":
+            return "n/a"
+        label = info.wifi_label() or "?"
+        if info.wifi_signal_dbm is not None:
+            return f"{label} ({info.wifi_signal_dbm} dBm)"
+        return label
+
+    def _public_ip_part(self, info: SysInfo) -> str:
+        state = info.public_ip_state
+        if state == "loading":
+            return "…"
+        if state == "unavailable":
+            return "n/a"
+        return info.public_ip or "n/a"
+
     def _format_sysinfo(self, info: SysInfo) -> str:
         def _f(v: object | None) -> str:
             return "—" if v is None or v == "" else str(v)
 
-        wifi = info.wifi_label() or "—"
-        rssi = info.wifi_signal_dbm
-        wifi_part = wifi if rssi is None else f"{wifi} ({rssi} dBm)"
-        iface_part = _f(info.default_iface)
-        gw_part = _f(info.default_gateway)
         return (
-            f"  Wi-Fi: {wifi_part}    "
-            f"Local: {_f(info.local_ip)} via {iface_part} → {gw_part}    "
-            f"Public: {_f(info.public_ip)}"
+            f"  Wi-Fi: {self._wifi_part(info)}    "
+            f"Local: {_f(info.local_ip)} via {_f(info.default_iface)} "
+            f"→ {_f(info.default_gateway)}    "
+            f"Public: {self._public_ip_part(info)}"
         )
 
     def _refresh(self) -> None:
@@ -204,7 +249,11 @@ class NettestApp(App[None]):
         if self._paused:
             return
 
-        snaps = {k: v.snapshot() for k, v in self.aggregators.items()}
+        spark_buckets = self._spark_buckets()
+        snaps = {
+            k: v.snapshot(window_s=self._spark_window_s, sparkline_buckets=spark_buckets)
+            for k, v in self.aggregators.items()
+        }
         rows = compute_health_summary(snaps, thresholds=self._cfg.thresholds)
         health_lines = [
             f"  {self._dot(row.severity)}  {row.severity:8}  {row.name:10}  {row.detail}"
@@ -212,19 +261,38 @@ class NettestApp(App[None]):
         ]
         self.query_one("#health_text", Static).update("\n".join(health_lines))
         self._render_table(snaps)
+        self._update_events_visibility()
 
-        if self._events:
-            ev_text = "\n".join(
-                (
-                    f"  {self._dot(_EVENT_SEV_TO_STATUS.get(e.severity, 'warn'))}  "
-                    f"{e.ts_end.strftime('%H:%M:%S')}  "
-                    f"{rich_escape(e.kind)}: {rich_escape(e.summary)}"
-                )
-                for e in list(self._events)[-10:]
-            )
+    def _spark_buckets(self) -> int:
+        """Scale sparkline width to remaining column width.
+
+        Falls back to 24 when the table width isn't measurable yet (first
+        paint). Subtracts the width of the fixed-width columns; clamped to
+        a sensible range so a very wide table doesn't blow up the deque.
+        """
+        try:
+            table: DataTable[Any] = self.query_one("#targets", DataTable)
+            total = table.size.width
+        except Exception:  # noqa: BLE001
+            return 24
+        # rough widths: probe(12) + target(28) + last(6) + p50(6) + p95(6) + loss(8)
+        fixed = 12 + 28 + 6 + 6 + 6 + 8 + 7  # +7 borders/padding
+        avail = max(8, total - fixed)
+        return max(8, min(60, avail))
+
+    def _update_events_visibility(self) -> None:
+        try:
+            panel = self.query_one("#events", Container)
+            table = self.query_one("#targets", DataTable)
+        except Exception:  # noqa: BLE001
+            return
+        if self._events_visible and self._events:
+            panel.styles.display = "block"
+            panel.styles.width = "45%"
+            table.styles.width = "55%"
         else:
-            ev_text = "  (no events yet)"
-        self.query_one("#events_text", Static).update(ev_text)
+            panel.styles.display = "none"
+            table.styles.width = "100%"
 
     def _row_passes_filter(self, probe: str, target: str, severity: str) -> bool:
         if self._severity_filter != "all":
@@ -318,9 +386,9 @@ class NettestApp(App[None]):
             if agg is not None:
                 self.push_screen(DetailScreen(probe=probe, target=target, aggregator=agg))
 
-    def action_show_events(self) -> None:
-        from nettest.tui.detail import EventsScreen
-        self.push_screen(EventsScreen(events=list(self._events)))
+    def action_toggle_events(self) -> None:
+        self._events_visible = not self._events_visible
+        self._update_events_visibility()
 
     def action_show_history(self) -> None:
         from nettest.tui.detail import HistoryScreen
@@ -363,6 +431,32 @@ class NettestApp(App[None]):
             f"severity filter: {_SEVERITY_FILTER_HELP[self._severity_filter]}",
             timeout=2,
         )
+
+    def action_spark_window_smaller(self) -> None:
+        self._cycle_spark_window(-1)
+
+    def action_spark_window_larger(self) -> None:
+        self._cycle_spark_window(1)
+
+    def _cycle_spark_window(self, direction: int) -> None:
+        try:
+            idx = _SPARK_WINDOWS_S.index(self._spark_window_s)
+        except ValueError:
+            idx = 0
+        new_idx = max(0, min(len(_SPARK_WINDOWS_S) - 1, idx + direction))
+        self._spark_window_s = _SPARK_WINDOWS_S[new_idx]
+        self.notify(
+            f"sparkline window: {self._format_window(self._spark_window_s)}",
+            timeout=2,
+        )
+
+    @staticmethod
+    def _format_window(s: float) -> str:
+        if s < 60:
+            return f"{int(s)}s"
+        if s < 3600:
+            return f"{int(s / 60)}m"
+        return f"{int(s / 3600)}h"
 
     def action_show_help(self) -> None:
         from nettest.tui.detail import HelpScreen
