@@ -13,6 +13,7 @@
   const healthBar = document.getElementById("health-bar");
   const healthDot = healthBar ? healthBar.querySelector(".health-dot") : null;
   const healthText = healthBar ? healthBar.querySelector(".health-text") : null;
+  const restBanner = document.getElementById("rest-error-banner");
 
   let liveSeries = {};
   const MAX_LIVE_POINTS = 1200;
@@ -88,9 +89,69 @@
     return shortLabel(k).replace(/\/[^·/]+$/, "");
   }
 
+  // Centralized writer: always rebuilds className so an earlier modifier
+  // (e.g. "error") can't bleed through when a later call only updates text.
+  // W2 was that checkWsStaleness() set textContent only, leaving a red pill
+  // that literally said "live".
   function setWsStatus(text, modifier) {
     wsStatus.textContent = text;
     wsStatus.className = `ws-pill${modifier ? " ws-" + modifier : ""}`;
+  }
+
+  // REST endpoint failure tracking. Each entry: { count, lastErr, nextAt }.
+  // The banner aggregates active failures so the operator sees "one place
+  // to look" instead of a row of ws-error pill flashes.
+  const restFailures = new Map();
+  function markRestFailure(endpoint, err) {
+    const prev = restFailures.get(endpoint) || { count: 0, lastErr: null, nextAt: 0 };
+    prev.count += 1;
+    prev.lastErr = err && err.message ? err.message : String(err);
+    restFailures.set(endpoint, prev);
+    renderRestBanner();
+  }
+  function clearRestFailure(endpoint) {
+    if (restFailures.delete(endpoint)) renderRestBanner();
+  }
+  function renderRestBanner() {
+    if (!restBanner) return;
+    if (restFailures.size === 0) {
+      restBanner.hidden = true;
+      restBanner.innerHTML = "";
+      return;
+    }
+    const parts = [];
+    for (const [ep, info] of restFailures) {
+      parts.push(`<span class="rb-detail">${ep}: ${info.lastErr}${info.count > 1 ? ` (×${info.count})` : ""}</span>`);
+    }
+    restBanner.innerHTML = `<span class="rb-title">REST error</span>${parts.join(" · ")}`;
+    restBanner.hidden = false;
+  }
+
+  // Exponential-backoff scheduler for REST pollers — wraps a fetcher fn so
+  // persistent 500s don't flood devtools at 30s/5s/10s forever. After a
+  // success the delay resets to the configured base.
+  function makeBackoff(name, fn, baseMs, maxMs) {
+    let nextDelay = baseMs;
+    let timer = null;
+    let stopped = false;
+    async function tick() {
+      timer = null;
+      if (stopped) return;
+      try {
+        await fn();
+        clearRestFailure(name);
+        nextDelay = baseMs;
+      } catch (err) {
+        markRestFailure(name, err);
+        nextDelay = Math.min(maxMs, Math.max(baseMs, nextDelay * 2));
+      }
+      if (!stopped) timer = setTimeout(tick, nextDelay);
+    }
+    return {
+      start: () => { stopped = false; if (timer == null) timer = setTimeout(tick, 0); },
+      stop: () => { stopped = true; if (timer != null) { clearTimeout(timer); timer = null; } },
+      kick: () => { if (!stopped) { if (timer != null) clearTimeout(timer); timer = setTimeout(tick, 0); } },
+    };
   }
 
   function pushPoint(r) {
@@ -211,14 +272,15 @@
 
   function refreshHealthFromPills() {
     let crit = 0, warn = 0;
-    for (const pill of statusPills.values()) {
-      if (pill.dataset.sev === "crit") crit++;
+    const critNames = [];
+    for (const [k, pill] of statusPills.entries()) {
+      if (pill.dataset.sev === "crit") { crit++; critNames.push(pillLabel(k)); }
       else if (pill.dataset.sev === "warn") warn++;
     }
-    updateHealthBar(crit, warn, statusPills.size);
+    updateHealthBar(crit, warn, statusPills.size, critNames);
   }
 
-  function updateHealthBar(critCount, warnCount, totalProbes) {
+  function updateHealthBar(critCount, warnCount, totalProbes, critNames) {
     if (!healthBar || !healthDot || !healthText) return;
     if (totalProbes === 0) {
       healthBar.setAttribute("data-state", "ok");
@@ -229,7 +291,16 @@
     if (critCount > 0) {
       healthBar.setAttribute("data-state", "crit");
       healthDot.textContent = "✕";
-      healthText.textContent = `${critCount} probe${critCount === 1 ? "" : "s"} critical`;
+      // Inline the failing probe names so the operator doesn't have to
+      // scan the pill row to identify what's broken. Cap to 6 names to
+      // keep the bar readable on narrow viewports.
+      let names = "";
+      if (critNames && critNames.length) {
+        const shown = critNames.slice(0, 6).join(", ");
+        const more = critNames.length > 6 ? `, +${critNames.length - 6} more` : "";
+        names = `: ${shown}${more}`;
+      }
+      healthText.textContent = `${critCount} critical${names}`;
     } else if (warnCount > 0) {
       healthBar.setAttribute("data-state", "warn");
       healthDot.textContent = "⚠";
@@ -241,11 +312,12 @@
     }
   }
 
-  // Authoritative snapshot from the DB. Used for initial paint + a 30s
-  // fallback while the WS handler keeps pills live in between. Also the
-  // only place that prunes pills whose probe/target stopped reporting.
+  // Authoritative snapshot from the DB. Used for initial paint + a fallback
+  // (with exponential backoff) while the WS handler keeps pills live in
+  // between. Also the only place that prunes pills whose probe/target
+  // stopped reporting. Returns a Promise so makeBackoff() can drive it.
   function refreshStatus() {
-    fetch("/api/status")
+    return fetch("/api/status")
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(rows => {
         const seen = new Set();
@@ -262,13 +334,12 @@
         }
         reorderPills();
         refreshHealthFromPills();
-      })
-      .catch(err => setWsStatus(`status error: ${err.message}`, "error"));
+      });
   }
 
   function refreshSysinfo() {
-    if (!sysinfoRow) return;
-    fetch("/api/sysinfo")
+    if (!sysinfoRow) return Promise.resolve();
+    return fetch("/api/sysinfo")
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(info => {
         let ssidLabel;
@@ -295,8 +366,7 @@
         sysinfoRow.innerHTML = items
           .map(([k, v]) => `<span class="item"><span class="label">${k}:</span><span class="value">${v}</span></span>`)
           .join("");
-      })
-      .catch(err => setWsStatus(`sysinfo error: ${err.message}`, "error"));
+      });
   }
 
   function updateExportLink() {
@@ -338,6 +408,7 @@
     const from = now - RANGE_MS[range];
     fetch(`/api/results?from=${from}&to=${now}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(rows => { clearRestFailure("results"); return rows; })
       .then(rows => {
         liveSeries = {};
         for (const row of rows) {
@@ -362,7 +433,7 @@
         allDirty = true;
         renderAll();
       })
-      .catch(err => setWsStatus(`range fetch error: ${err.message}`, "error"));
+      .catch(err => markRestFailure("results", err));
   }
 
   if (rangeNav) {
@@ -628,7 +699,7 @@
 
   function refreshEvents() {
     const now = Date.now();
-    fetch(`/api/events?from=${now - eventsWindowMs()}&to=${now}`)
+    return fetch(`/api/events?from=${now - eventsWindowMs()}&to=${now}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(events => {
         const grouped = groupEvents(events);
@@ -666,8 +737,7 @@
           }
           eventsList.appendChild(li);
         }
-      })
-      .catch(err => setWsStatus(`events error: ${err.message}`, "error"));
+      });
   }
 
   let wsAttempt = 0;
@@ -696,7 +766,7 @@
       setWsStatus("live", "live"); wsAttempt = 0;
       // A reconnect can follow an interface flip — refresh sysinfo immediately
       // so the displayed IP/gateway match the path we're actually on now.
-      refreshSysinfo();
+      sysinfoPoller.kick();
     };
     ws.onclose = () => { wsLive = false; scheduleReconnect(); };
     ws.onerror = () => { /* onclose will follow */ };
@@ -726,36 +796,42 @@
   }
 
   // The ws-status text shows "live · Ns ago" when no WS message has arrived
-  // in 10+ seconds. Only textContent is touched so the className stays at
-  // ws-pill ws-live — the pill color doesn't flicker, only the text.
+  // in 10+ seconds. Above 60s we flip the modifier to "stale" (yellow) and
+  // format the duration with fmtDuration() so the operator reads "live · 4h
+  // 49m ago" as the obviously-wrong-state it is, not "live · 17368s ago".
   function checkWsStaleness() {
     if (!wsLive) return;
     const staleness = Date.now() - lastMessageTs;
-    if (staleness > 10_000) {
-      const t = `live · ${Math.round(staleness / 1000)}s ago`;
-      if (wsStatus.textContent !== t) wsStatus.textContent = t;
-    } else if (wsStatus.textContent !== "live") {
-      wsStatus.textContent = "live";
+    if (staleness > 60_000) {
+      setWsStatus(`no data · ${fmtDuration(staleness)} ago`, "stale");
+    } else if (staleness > 10_000) {
+      setWsStatus(`live · ${Math.round(staleness / 1000)}s ago`, "live");
+    } else {
+      setWsStatus("live", "live");
     }
   }
 
+  // Wrapped pollers with exponential backoff so persistent 500s back off
+  // from 30s → 60s → 120s → 5min instead of pounding the server forever.
+  const statusPoller = makeBackoff("status", () => refreshStatus(),     30_000, 300_000);
+  const eventsPoller = makeBackoff("events", () => refreshEvents(),      5_000, 300_000);
+  const sysinfoPoller = makeBackoff("sysinfo", () => refreshSysinfo(),  10_000, 300_000);
+
   function startIntervals() {
     if (intervals.length) return;
-    // Status pills are now driven by the WS onmessage handler; this 30s
-    // poll is just a fallback in case the WS is disconnected, and it
-    // also handles pruning pills whose probe stopped reporting.
-    intervals.push(setInterval(refreshStatus, 30000));
+    statusPoller.start();
+    eventsPoller.start();
+    sysinfoPoller.start();
     intervals.push(setInterval(renderAll, 1000));
-    intervals.push(setInterval(refreshEvents, 5000));
-    // Sysinfo at 10s so an interface flip during diagnosis surfaces fast;
-    // also retriggered explicitly on WS reconnect (see connectWs.onopen).
-    intervals.push(setInterval(refreshSysinfo, 10_000));
     intervals.push(setInterval(checkWsStaleness, 1000));
   }
 
   function stopIntervals() {
     for (const id of intervals) clearInterval(id);
     intervals.length = 0;
+    statusPoller.stop();
+    eventsPoller.stop();
+    sysinfoPoller.stop();
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -763,18 +839,17 @@
       stopIntervals();
     } else {
       startIntervals();
-      refreshStatus();
-      refreshEvents();
-      refreshSysinfo();
+      // Kick each poller to fetch immediately rather than waiting out the
+      // current backoff window — the user just came back to the tab.
+      statusPoller.kick();
+      eventsPoller.kick();
+      sysinfoPoller.kick();
       allDirty = true;
       renderAll();
     }
   });
 
   updateExportLink();
-  refreshSysinfo();
-  refreshStatus();
-  refreshEvents();
   startIntervals();
   connectWs();
 })();

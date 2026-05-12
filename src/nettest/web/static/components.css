@@ -29,6 +29,21 @@ header nav button.active {
 #sysinfo-row .label { color: var(--muted); margin-right: 6px; font-size: 11px; }
 #sysinfo-row .value { color: var(--fg); }
 
+/* REST error banner — full-width strip below the header so a failing
+   /api/status or /api/events surfaces at a glance instead of hiding in
+   the ws-status pill. */
+#rest-error-banner {
+  padding: 8px 20px;
+  background: rgba(239, 68, 68, 0.18);
+  color: var(--crit);
+  font-size: 12px; font-weight: 600;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.4);
+  display: flex; align-items: center; gap: 10px;
+}
+#rest-error-banner[hidden] { display: none; }
+#rest-error-banner .rb-title { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px; }
+#rest-error-banner .rb-detail { opacity: 0.9; font-weight: 500; }
+
 /* Health bar — most important status line on the page, slightly larger
    than other 12px chrome and heavier weight. */
 #health-bar { font-size: 13px; font-weight: 700; }
@@ -156,4 +171,5 @@ footer { font-size: 12px; }
   border: 1px solid var(--border);
 }
 #ws-status.ws-live { color: var(--ok); border-color: rgba(62, 207, 142, 0.4); }
+#ws-status.ws-stale { color: var(--warn); border-color: rgba(234, 179, 8, 0.4); }
 #ws-status.ws-error { color: var(--crit); border-color: rgba(239, 68, 68, 0.4); }
