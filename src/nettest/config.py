@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import yaml
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PositiveInt
@@ -121,7 +121,7 @@ def _coerce_str_list(v: Any) -> list[str]:
     """Accept a single string or a list of strings; always return a list."""
     if isinstance(v, str):
         return [v]
-    return v
+    return cast(list[str], v)
 
 
 CachedQueryList = Annotated[list[str], BeforeValidator(_coerce_str_list)]

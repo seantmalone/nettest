@@ -7,13 +7,12 @@ import csv
 import io
 import sqlite3
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated, Any
 
-from collections.abc import Iterator
-
 from fastapi import FastAPI, Query, WebSocket
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from nettest.bus import ResultBus
@@ -131,7 +130,8 @@ def build_app(
                 w = csv.writer(buf)
                 w.writerow(["ts", "probe", "target", "ok", "duration_ms", "error"])
                 yield buf.getvalue()
-                buf.seek(0); buf.truncate(0)
+                buf.seek(0)
+                buf.truncate(0)
                 sql = (
                     "SELECT ts, probe, target, ok, duration_ms, error "
                     "FROM results WHERE ts >= ? AND ts <= ?"
@@ -147,7 +147,8 @@ def build_app(
                 for row in conn.execute(sql, params):
                     w.writerow([row[0], row[1], row[2], int(row[3]), row[4], row[5] or ""])
                     yield buf.getvalue()
-                    buf.seek(0); buf.truncate(0)
+                    buf.seek(0)
+                    buf.truncate(0)
             finally:
                 conn.close()
 
