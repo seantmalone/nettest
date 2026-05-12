@@ -9,7 +9,28 @@ description = "High-frequency network diagnostic utility with TUI and web dashbo
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Sean Malone", email = "seantmalone@gmail.com" }]
+authors = [
+    { name = "Sean Malone" },
+    { email = "seantmalone@gmail.com" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Networking :: Monitoring",
+    "Topic :: Terminals",
+]
 dependencies = [
     "httpx>=0.27",
     "dnspython>=2.6",
@@ -32,8 +53,15 @@ dev = [
     "dnslib>=0.9",
     "ruff>=0.6",
     "mypy>=1.11",
+]
+build = [
     "pyinstaller>=6.10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/seantmalone/nettest"
+Repository = "https://github.com/seantmalone/nettest"
+Issues = "https://github.com/seantmalone/nettest/issues"
 
 [project.scripts]
 nettest = "nettest.cli:main"
