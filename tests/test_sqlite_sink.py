@@ -42,6 +42,36 @@ async def test_sqlite_sink_writes_batched(tmp_path: Path):
     conn.close()
 
 
+async def test_sqlite_sink_does_not_wedge_after_idle(tmp_path: Path):
+    """Regression: an idle gap >= flush_interval before the first result
+    used to pin the wait_for timeout at 0.0 forever, so the queue was
+    never drained and nothing persisted. Results published after the
+    idle period must still be written while the sink is running.
+    """
+    db = tmp_path / "x.db"
+    conn = sqlite3.connect(db)
+    init_schema(conn)
+    conn.close()
+
+    bus = ResultBus()
+    sink = SqliteSink(bus=bus, db_path=db, batch_size=3, flush_interval_ms=50)
+    task = asyncio.create_task(sink.run())
+
+    # Idle well past the 50ms flush interval before any result arrives.
+    await asyncio.sleep(0.3)
+    for _ in range(4):
+        await bus.publish(make_result())
+    await asyncio.sleep(0.3)
+
+    # Assert BEFORE stop() so the final-flush path can't mask a wedge.
+    conn = sqlite3.connect(db)
+    count = conn.execute("SELECT COUNT(*) FROM results").fetchone()[0]
+    conn.close()
+    sink.stop()
+    await task
+    assert count == 4
+
+
 async def test_sqlite_sink_handles_failure_results(tmp_path: Path):
     db = tmp_path / "x.db"
     conn = sqlite3.connect(db)

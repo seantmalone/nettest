@@ -38,6 +38,14 @@ class SqliteSink:
             loop = asyncio.get_running_loop()
             last_flush = loop.time()
             while not self._stopping.is_set() or buf or not self._queue.empty():
+                # With nothing buffered there's no pending flush deadline.
+                # Advancing last_flush here keeps the wait_for timeout at a
+                # full interval so queue.get() actually gets polled. Without
+                # this, once (now - last_flush) >= flush_interval while the
+                # buffer is empty, the timeout pins at 0.0 forever and
+                # wait_for(get, 0.0) never dequeues — wedging the sink.
+                if not buf:
+                    last_flush = loop.time()
                 timeout = max(0.0, self._flush_interval_s - (loop.time() - last_flush))
                 with contextlib.suppress(TimeoutError):
                     item = await asyncio.wait_for(self._queue.get(), timeout=timeout)

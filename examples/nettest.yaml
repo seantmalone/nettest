@@ -46,7 +46,7 @@ probes:
   stream:       { restart_interval_ms: 60s, stall_threshold_ms: 200ms }
   bandwidth:    { interval_ms: 5m,     timeout_ms: 30s }
   mtu:          { interval_ms: 5m,     timeout_ms: 6s,   sizes: [1500, 1472, 1400, 1200, 1000, 576] }
-  wifi:         { interval_ms: 5s,     timeout_ms: 5s,   enabled: true }
+  wifi:         { interval_ms: 15s,    timeout_ms: 8s,   enabled: true }
 
 patterns:
   micro_outage:    { min_consecutive_fails: 3, window_ms: 2s }

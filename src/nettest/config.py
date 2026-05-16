@@ -95,12 +95,14 @@ class MtuProbe(ProbeTimings):
 
 
 class WifiProbe(ProbeTimings):
-    # 1s/1s was guaranteed-flaky on macOS 14+: `airport` is gone, and the
-    # `system_profiler SPAirPortDataType` fallback typically takes 2-3s.
-    # Wi-Fi state also doesn't change second-to-second, so the higher
-    # interval keeps the probe useful without thrashing system_profiler.
-    interval_ms: PositiveDurationMs = 5000
-    timeout_ms: PositiveDurationMs = 5000
+    # 1s/1s was guaranteed-flaky on macOS 14+: `airport` is gone and the
+    # `system_profiler SPAirPortDataType` fallback measured ~4.3s here
+    # (and can spike higher). At 5s/5s the probe runs nearly back-to-back
+    # with almost no timeout margin. Wi-Fi association state barely
+    # changes, so a 15s interval with an 8s timeout gives system_profiler
+    # comfortable headroom and stops hammering it.
+    interval_ms: PositiveDurationMs = 15000
+    timeout_ms: PositiveDurationMs = 8000
     enabled: bool = True
 
 
